@@ -1,46 +1,203 @@
 import { motion } from 'motion/react';
-import { ArrowLeft, Music, LogOut } from 'lucide-react';
+import { ArrowLeft, Music, LogOut, User, Play, ChevronDown, ChevronUp, Pause, X, Download, Share2 } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
-import { MiniPlayer } from './MiniPlayer';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
+import { GenerationService } from '@/lib/generationService';
+import type { SunoMusicTrack } from '@/types/suno';
 
 interface ProfileScreenProps {
   onBack: () => void;
 }
 
+interface UserProfile {
+  username: string;
+  email: string;
+  createdAt: string;
+}
+
+interface Generation {
+  id: string;
+  prompt: string;
+  model: string;
+  status: string;
+  created_at: string;
+  trackCount?: number;
+  tracks?: SunoMusicTrack[];
+}
+
 export function ProfileScreen({ onBack }: ProfileScreenProps) {
-  const savedTracks = [
-    { title: 'Island Party Anthem', vibe: 'Party', date: 'Today' },
-    { title: 'Birthday Bash', vibe: 'Party', date: 'Yesterday' },
-    { title: 'Weekend Vibes', vibe: 'Chill', date: '2 days ago' },
-    { title: 'Crew Anthem', vibe: 'Hype', date: '3 days ago' },
-    { title: 'Sunset Groove', vibe: 'Romantic', date: '1 week ago' },
-  ];
-
-  const [currentTrack, setCurrentTrack] = useState<typeof savedTracks[0] | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [generations, setGenerations] = useState<Generation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedGenId, setExpandedGenId] = useState<string | null>(null);
+  const [currentTrack, setCurrentTrack] = useState<SunoMusicTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  const handleTrackClick = (track: typeof savedTracks[0]) => {
-    if (currentTrack?.title === track.title) {
-      setIsPlaying(!isPlaying);
-    } else {
-      setCurrentTrack(track);
-      setIsPlaying(true);
+  useEffect(() => {
+    loadUserProfile();
+    loadGenerations();
+  }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserProfile({
+          username: user.user_metadata?.username || user.email?.split('@')[0] || 'User',
+          email: user.email || '',
+          createdAt: user.created_at || '',
+        });
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
+  const loadGenerations = async () => {
+    try {
+      const userGenerations = await GenerationService.getUserGenerations(10);
+      
+      // Get tracks for each generation
+      const generationsWithTracks = await Promise.all(
+        userGenerations.map(async (gen) => {
+          const tracks = await GenerationService.getGenerationTracks(gen.id);
+          return {
+            id: gen.id,
+            prompt: gen.prompt,
+            model: gen.model,
+            status: gen.status,
+            created_at: gen.created_at,
+            trackCount: tracks.length,
+            tracks: tracks,
+          };
+        })
+      );
+      
+      setGenerations(generationsWithTracks);
+    } catch (error) {
+      console.error('Error loading generations:', error);
+    }
+  };
+
+  // Update current time
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => setDuration(audio.duration);
+
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+    };
+  }, [currentTrack]);
+
+  const toggleExpand = (genId: string) => {
+    setExpandedGenId(expandedGenId === genId ? null : genId);
+  };
+
+  const handlePlayTrack = (track: SunoMusicTrack) => {
+    if (currentTrack?.id === track.id) {
+      // Toggle play/pause for current track
+      handlePlayPause();
+    } else {
+      // Load and play new track
+      setCurrentTrack(track);
+      setIsPlaying(true);
+      setTimeout(() => {
+        audioRef.current?.play();
+      }, 100);
+    }
+  };
+
+  const handlePlayPause = async () => {
+    if (audioRef.current) {
+      try {
+        if (isPlaying) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          await audioRef.current.play();
+          setIsPlaying(true);
+        }
+      } catch (error) {
+        console.error('Error playing audio:', error);
+      }
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
   };
 
   const handleClosePlayer = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
     setCurrentTrack(null);
     setIsPlaying(false);
   };
 
-  const handleLogout = () => {
-    // Logout logic here
-    console.log('Logging out...');
+  const handleDownload = () => {
+    if (currentTrack) {
+      const link = document.createElement('a');
+      link.href = currentTrack.audio_url;
+      link.download = `${currentTrack.title}.mp3`;
+      link.click();
+    }
+  };
+
+  const handleShare = () => {
+    if (currentTrack && navigator.share) {
+      navigator.share({
+        title: currentTrack.title,
+        text: `Check out my track: ${currentTrack.title}`,
+        url: currentTrack.audio_url,
+      });
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      onBack(); // Return to home
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    return date.toLocaleDateString();
   };
 
   return (
@@ -92,63 +249,165 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
               <span className="text-3xl">🎵</span>
             </div>
           </motion.div>
-          <h2 className="text-3xl text-white mb-2">Island Creator</h2>
-          <p className="text-white/70 mb-4">Making waves in the Caribbean</p>
+          {loading ? (
+            <>
+              <h2 className="text-3xl text-white mb-2">Loading...</h2>
+              <p className="text-white/70 mb-4">Please wait</p>
+            </>
+          ) : userProfile ? (
+            <>
+              <h2 className="text-3xl text-white mb-2">{userProfile.username}</h2>
+              <p className="text-white/70 mb-2">{userProfile.email}</p>
+              <p className="text-white/50 text-sm mb-4">
+                Member since {formatDate(userProfile.createdAt)}
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-3xl text-white mb-2">
+                <User className="w-8 h-8 inline mr-2" />
+                Guest
+              </h2>
+              <p className="text-white/70 mb-4">Sign in to save your tracks</p>
+            </>
+          )}
           
           {/* Stats */}
-          <div className="flex justify-center mb-6">
+          <div className="flex justify-center gap-8 mb-6">
             <div>
-              <p className="text-2xl text-white">{savedTracks.length}</p>
-              <p className="text-white/60 text-sm">Tracks</p>
+              <p className="text-2xl text-white">{generations.length}</p>
+              <p className="text-white/60 text-sm">Generations</p>
+            </div>
+            <div>
+              <p className="text-2xl text-white">∞</p>
+              <p className="text-white/60 text-sm">Unlimited</p>
             </div>
           </div>
         </motion.div>
 
-        {/* Track History Header */}
+        {/* Generation History Header */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
           className="mb-4"
         >
-          <h3 className="text-white/90 text-xl">Your Bangers</h3>
-          <p className="text-white/60 text-sm">Your track history</p>
+          <h3 className="text-white/90 text-xl">Your Music</h3>
+          <p className="text-white/60 text-sm">Your generation history</p>
         </motion.div>
 
-        {/* Track History */}
+        {/* Generation History */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
           className="space-y-4 mb-6"
         >
-          {savedTracks.map((track, i) => (
-            <motion.div
-              key={i}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => handleTrackClick(track)}
-              className="cursor-pointer"
-            >
-              <FloatingCard delay={0.4 + i * 0.1} rotation={i % 2 === 0 ? 1 : -1}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
-                      currentTrack?.title === track.title && isPlaying ? 'animate-pulse' : ''
-                    }`}>
-                      <Music className="w-6 h-6 text-white" />
+          {generations.length === 0 ? (
+            <FloatingCard delay={0.4} rotation={0}>
+              <div className="text-center py-8">
+                <Music className="w-12 h-12 text-white/30 mx-auto mb-3" />
+                <p className="text-white/70">No generations yet</p>
+                <p className="text-white/50 text-sm">Start creating your first track!</p>
+              </div>
+            </FloatingCard>
+          ) : (
+            generations.map((gen, i) => (
+              <motion.div
+                key={gen.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 + i * 0.05 }}
+              >
+                <FloatingCard delay={0} rotation={i % 2 === 0 ? 1 : -1}>
+                  <button
+                    onClick={() => toggleExpand(gen.id)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
+                          gen.status === 'processing' ? 'animate-pulse' : ''
+                        }`}>
+                          <Music className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-white/90 line-clamp-1">{gen.prompt}</p>
+                          <div className="flex items-center gap-2 text-white/60 text-sm">
+                            <span>{gen.model}</span>
+                            {gen.trackCount && gen.trackCount > 0 && (
+                              <>
+                                <span>•</span>
+                                <span>{gen.trackCount} track{gen.trackCount > 1 ? 's' : ''}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className={`text-sm ${
+                            gen.status === 'completed' ? 'text-green-400' : 
+                            gen.status === 'processing' ? 'text-yellow-400' : 
+                            gen.status === 'failed' ? 'text-red-400' : 
+                            'text-white/60'
+                          }`}>
+                            {gen.status}
+                          </p>
+                          <p className="text-white/60 text-xs">{formatDate(gen.created_at)}</p>
+                        </div>
+                        {gen.trackCount && gen.trackCount > 0 && (
+                          <div className="text-white/60">
+                            {expandedGenId === gen.id ? (
+                              <ChevronUp className="w-5 h-5" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5" />
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white/90">{track.title}</p>
-                      <p className="text-white/60 text-sm">{track.vibe}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-white/60 text-sm">{track.date}</p>
-                  </div>
-                </div>
-              </FloatingCard>
-            </motion.div>
-          ))}
+                  </button>
+
+                  {/* Expanded tracks */}
+                  {expandedGenId === gen.id && gen.tracks && gen.tracks.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-4 pt-4 border-t border-white/10 space-y-2"
+                    >
+                      {gen.tracks.map((track, trackIndex) => (
+                        <button
+                          key={track.id}
+                          onClick={() => handlePlayTrack(track)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-xl transition ${
+                            currentTrack?.id === track.id
+                              ? 'bg-gradient-to-br from-[#FF69B4]/20 to-[#00BFFF]/20 border border-white/20'
+                              : 'bg-white/5 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
+                            currentTrack?.id === track.id && isPlaying ? 'animate-pulse' : ''
+                          }`}>
+                            {currentTrack?.id === track.id && isPlaying ? (
+                              <Pause className="w-5 h-5 text-white" fill="white" />
+                            ) : (
+                              <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                            )}
+                          </div>
+                          <div className="flex-1 text-left">
+                            <p className="text-white/90 text-sm line-clamp-1">{track.title}</p>
+                            <p className="text-white/60 text-xs">{formatDuration(track.duration)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </FloatingCard>
+              </motion.div>
+            ))
+          )}
         </motion.div>
 
         {/* Logout Button */}
@@ -156,6 +415,7 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8 }}
+          className={currentTrack ? 'mb-32' : ''}
         >
           <motion.button
             whileTap={{ scale: 0.95 }}
@@ -168,13 +428,94 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
         </motion.div>
       </div>
 
-      {/* Mini Player */}
-      <MiniPlayer
-        track={currentTrack}
-        isPlaying={isPlaying}
-        onPlayPause={handlePlayPause}
-        onClose={handleClosePlayer}
-      />
+      {/* Hidden audio element */}
+      {currentTrack && (
+        <audio
+          ref={audioRef}
+          src={currentTrack.audio_url}
+          onEnded={() => setIsPlaying(false)}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+        />
+      )}
+
+      {/* Fixed bottom music player */}
+      {currentTrack && (
+        <motion.div
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 100, opacity: 0 }}
+          className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-br from-[#667EEA]/95 via-[#764BA2]/95 to-[#F093FB]/95 backdrop-blur-xl border-t border-white/20 shadow-2xl"
+        >
+          <div className="p-4">
+            {/* Progress bar */}
+            <div className="mb-3">
+              <input
+                type="range"
+                min="0"
+                max={duration || 0}
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-lg"
+                style={{
+                  background: `linear-gradient(to right, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.8) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.2) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.2) 100%)`
+                }}
+              />
+              <div className="flex justify-between text-white/60 text-xs mt-1">
+                <span>{formatDuration(currentTime)}</span>
+                <span>{formatDuration(duration)}</span>
+              </div>
+            </div>
+
+            {/* Player controls */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-1">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handlePlayPause}
+                  className="w-12 h-12 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center shadow-2xl"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-6 h-6 text-white" fill="white" />
+                  ) : (
+                    <Play className="w-6 h-6 text-white ml-0.5" fill="white" />
+                  )}
+                </motion.button>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/90 text-sm font-medium line-clamp-1">{currentTrack.title}</p>
+                  <p className="text-white/60 text-xs line-clamp-1">{currentTrack.tags.split(',')[0]}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleDownload}
+                  className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
+                >
+                  <Download className="w-4 h-4 text-white" />
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleShare}
+                  className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
+                >
+                  <Share2 className="w-4 h-4 text-white" />
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleClosePlayer}
+                  className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }

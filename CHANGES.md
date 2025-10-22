@@ -204,3 +204,4 @@ npm run lint
 Date: 22 octobre 2025
 Version: 1.0.0 (Lovable Ready)
 
+

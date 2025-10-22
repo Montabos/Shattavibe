@@ -1,25 +1,21 @@
 import { motion } from 'motion/react';
-import { Music, Radio, Sparkles } from 'lucide-react';
+import { Music, Radio, Sparkles, AlertCircle } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { useEffect } from 'react';
 
 interface GeneratingScreenProps {
   onComplete: () => void;
+  status: string;
+  progress: string;
+  error: string | null;
 }
 
-export function GeneratingScreen({ onComplete }: GeneratingScreenProps) {
+export function GeneratingScreen({ onComplete, status, progress, error }: GeneratingScreenProps) {
   const steps = [
-    { icon: Music, text: 'Mixing bass...', delay: 0 },
-    { icon: Radio, text: 'Adding vocals...', delay: 1 },
-    { icon: Sparkles, text: 'Dropping the fire 🔥', delay: 2 },
+    { icon: Music, text: 'Submitting request...', delay: 0 },
+    { icon: Radio, text: 'AI is composing...', delay: 1 },
+    { icon: Sparkles, text: 'Almost there! 🔥', delay: 2 },
   ];
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onComplete();
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [onComplete]);
 
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center">
@@ -58,20 +54,36 @@ export function GeneratingScreen({ onComplete }: GeneratingScreenProps) {
           className="text-center mb-12"
         >
           <motion.div
-            animate={{
-              scale: [1, 1.1, 1],
-              rotate: [0, 5, -5, 0],
-            }}
+            animate={
+              error
+                ? {}
+                : {
+                    scale: [1, 1.1, 1],
+                    rotate: [0, 5, -5, 0],
+                  }
+            }
             transition={{
               duration: 1,
               repeat: Infinity,
             }}
-            className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center shadow-2xl"
+            className={`w-24 h-24 mx-auto mb-6 rounded-full ${
+              error
+                ? 'bg-gradient-to-br from-red-500 to-orange-500'
+                : 'bg-gradient-to-br from-[#FF69B4] to-[#00BFFF]'
+            } flex items-center justify-center shadow-2xl`}
           >
-            <Music className="w-12 h-12 text-white" />
+            {error ? (
+              <AlertCircle className="w-12 h-12 text-white" />
+            ) : (
+              <Music className="w-12 h-12 text-white" />
+            )}
           </motion.div>
-          <h2 className="text-4xl text-white mb-2">Creating Magic</h2>
-          <p className="text-white/70">Your banger is cooking...</p>
+          <h2 className="text-4xl text-white mb-2">
+            {error ? 'Oops!' : 'Creating Magic'}
+          </h2>
+          <p className="text-white/70">
+            {error || progress}
+          </p>
         </motion.div>
 
         {/* Animated steps */}
@@ -106,21 +118,29 @@ export function GeneratingScreen({ onComplete }: GeneratingScreenProps) {
         </div>
 
         {/* Progress bar */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="mt-12"
-        >
-          <div className="h-2 bg-white/20 rounded-full overflow-hidden backdrop-blur-xl">
-            <motion.div
-              className="h-full bg-gradient-to-r from-[#FF69B4] to-[#00BFFF]"
-              initial={{ width: '0%' }}
-              animate={{ width: '100%' }}
-              transition={{ duration: 3.5, ease: "easeInOut" }}
-            />
-          </div>
-        </motion.div>
+        {!error && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="mt-12"
+          >
+            <div className="h-2 bg-white/20 rounded-full overflow-hidden backdrop-blur-xl">
+              <motion.div
+                className="h-full bg-gradient-to-r from-[#FF69B4] to-[#00BFFF]"
+                initial={{ width: '0%' }}
+                animate={{ width: status === 'completed' ? '100%' : '75%' }}
+                transition={{
+                  duration: status === 'completed' ? 0.5 : 120,
+                  ease: status === 'completed' ? 'easeInOut' : 'linear',
+                }}
+              />
+            </div>
+            <p className="text-white/50 text-center text-sm mt-3">
+              {status === 'polling' ? 'Checking for your tracks...' : 'Submitting to Suno AI...'}
+            </p>
+          </motion.div>
+        )}
       </div>
     </div>
   );

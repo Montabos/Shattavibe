@@ -5,11 +5,13 @@ import { Music, Sparkles, Calendar } from "lucide-react";
 interface HomeScreenProps {
   onGenerateClick: () => void;
   onProfileClick: () => void;
+  username: string | null;
 }
 
 export function HomeScreen({
   onGenerateClick,
   onProfileClick,
+  username,
 }: HomeScreenProps) {
   const today = new Date();
   const month = today.toLocaleString("default", {
@@ -73,7 +75,9 @@ export function HomeScreen({
             onClick={onProfileClick}
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF]" />
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center text-white/60 font-bold text-sm">
+              {username ? username.charAt(0).toUpperCase() : ''}
+            </div>
           </motion.button>
         </div>
 

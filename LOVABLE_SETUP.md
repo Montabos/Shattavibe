@@ -216,3 +216,4 @@ npm run preview
 
 **Projet prêt pour Lovable.dev ! 🎉**
 
+
