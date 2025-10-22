@@ -67,8 +67,8 @@ serve(async (req) => {
     console.log(`📝 Processing callback for task ${task_id}, type: ${callbackType}, code: ${code}`)
 
     // Update generation status based on callback type
-    // Accept tracks from 'first' or 'complete' callbacks
-    if (code === 200 && (callbackType === 'complete' || callbackType === 'first') && tracks && tracks.length > 0) {
+    // Accept tracks from 'text', 'first', or 'complete' callbacks
+    if (code === 200 && (callbackType === 'complete' || callbackType === 'first' || callbackType === 'text') && tracks && tracks.length > 0) {
       console.log(`🎵 Received ${tracks.length} tracks for task ${task_id} (callback: ${callbackType})`)
 
       // Try to get generation ID
@@ -113,6 +113,7 @@ serve(async (req) => {
           .eq('task_id', task_id)
 
         // Upsert anonymous tracks (insert or update if exists)
+        // Note: duration might be null in early callbacks (text/first), default to 0
         const anonTrackUpserts = tracks.map((track) => ({
           task_id: task_id,
           suno_id: track.id,
@@ -124,7 +125,7 @@ serve(async (req) => {
           source_audio_url: track.source_audio_url || '',
           stream_audio_url: track.stream_audio_url || '',
           image_url: track.image_url || '',
-          duration: track.duration,
+          duration: track.duration || 0,
         }))
 
         const { error: anonTracksError } = await supabaseClient
@@ -164,6 +165,7 @@ serve(async (req) => {
       }
 
       // Upsert tracks (insert or update if exists)
+      // Note: duration might be null in early callbacks (text/first), default to 0
       const trackUpserts = tracks.map((track) => ({
         generation_id: generation.id,
         suno_id: track.id,
@@ -175,7 +177,7 @@ serve(async (req) => {
         source_audio_url: track.source_audio_url || '',
         stream_audio_url: track.stream_audio_url || '',
         image_url: track.image_url || '',
-        duration: track.duration,
+        duration: track.duration || 0,
       }))
 
       const { error: tracksError } = await supabaseClient
@@ -206,7 +208,8 @@ serve(async (req) => {
       if (updateError && updateError.code !== 'PGRST116') {
         console.error('❌ Error updating generation to failed:', updateError)
       }
-    } else if (callbackType === 'processing' || callbackType === 'first' || callbackType === 'text') {
+    } else if (callbackType === 'processing') {
+      // Note: 'first' and 'text' are now handled in the main if block above
       console.log(`⏳ Task ${task_id} still processing (${callbackType})`)
 
       // Try to update to processing status (ignore if not found - anonymous user)
@@ -218,6 +221,9 @@ serve(async (req) => {
       if (updateError && updateError.code !== 'PGRST116') {
         console.error('❌ Error updating generation to processing:', updateError)
       }
+    } else if (callbackType === 'first' || callbackType === 'text') {
+      // If 'first' or 'text' callback arrives without tracks data, log it
+      console.log(`⚠️ Received '${callbackType}' callback for task ${task_id} but no tracks data yet`)
     }
 
     return new Response(

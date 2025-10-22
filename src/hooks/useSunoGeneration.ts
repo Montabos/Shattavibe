@@ -140,9 +140,13 @@ export function useSunoGeneration() {
    * Poll Supabase for tracks
    */
   const checkForTracks = useCallback(async (taskId: string) => {
+    console.log('🔄 Polling for task:', taskId);
     try {
       // Check if authenticated user
       const isAuthenticated = await GenerationService.isAuthenticated();
+      console.log('🔐 Is authenticated:', isAuthenticated);
+      
+      let shouldCheckAnonymous = false;
       
       if (isAuthenticated) {
         // Authenticated users: check generations + tracks tables
@@ -152,14 +156,16 @@ export function useSunoGeneration() {
           .eq('task_id', taskId)
           .single();
 
-        if (genError) {
+        if (genError && genError.code !== 'PGRST116') {
           console.error('Error checking generation:', genError);
           return false;
         }
 
-        if (!generation) {
-          return false;
-        }
+        // If not found in authenticated table, will check anonymous table below
+        if (!generation || (genError && genError.code === 'PGRST116')) {
+          console.log('⚠️ Not found in generations table, checking anonymous_generations...');
+          shouldCheckAnonymous = true;
+        } else {
 
         // Check if generation failed
         if (generation.status === 'failed') {
@@ -233,8 +239,11 @@ export function useSunoGeneration() {
             return true;
           }
         }
-      } else {
-        // Anonymous users: check anonymous_generations + anonymous_tracks tables
+        }
+      }
+      
+      // Check anonymous_generations table (for non-authenticated users OR authenticated users who started anonymously)
+      if (!isAuthenticated || shouldCheckAnonymous) {
         console.log('🔍 Checking anonymous generation for task:', taskId);
         
         const { data: anonGen, error: anonError } = await supabase
@@ -290,6 +299,13 @@ export function useSunoGeneration() {
           }
 
           console.log(`🎵 Found ${tracks?.length || 0} tracks`);
+          if (tracks && tracks.length > 0) {
+            console.log('📋 Track details:', tracks.map(t => ({ 
+              id: t.suno_id, 
+              duration: t.duration, 
+              stream_url: t.stream_audio_url?.substring(0, 50) 
+            })));
+          }
 
           if (tracks && tracks.length > 0) {
             // Tracks found! Update state and localStorage
@@ -344,7 +360,9 @@ export function useSunoGeneration() {
    * Start polling for tracks
    */
   useEffect(() => {
+    console.log('📡 useEffect - taskId:', state.taskId, 'status:', state.status);
     if (state.taskId && (state.status === 'generating' || state.status === 'polling')) {
+      console.log('✅ Starting polling for task:', state.taskId);
       // Start polling every 5 seconds
       setState((prev) => ({
         ...prev,
@@ -353,6 +371,7 @@ export function useSunoGeneration() {
       }));
 
       // Check immediately
+      console.log('🚀 Calling checkForTracks immediately');
       checkForTracks(state.taskId);
 
       // Then poll every 5 seconds for faster detection
