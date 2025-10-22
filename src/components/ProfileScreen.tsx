@@ -4,6 +4,7 @@ import { FloatingCard } from './FloatingCard';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { GenerationService } from '@/lib/generationService';
+import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
 import type { SunoMusicTrack } from '@/types/suno';
 
 interface ProfileScreenProps {
@@ -155,7 +156,7 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
   const handleDownload = () => {
     if (currentTrack) {
       const link = document.createElement('a');
-      link.href = currentTrack.audio_url;
+      link.href = getDownloadUrl(currentTrack);
       link.download = `${currentTrack.title}.mp3`;
       link.click();
     }
@@ -166,7 +167,7 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
       navigator.share({
         title: currentTrack.title,
         text: `Check out my track: ${currentTrack.title}`,
-        url: currentTrack.audio_url,
+        url: getDownloadUrl(currentTrack),
       });
     }
   };
@@ -432,7 +433,7 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
       {currentTrack && (
         <audio
           ref={audioRef}
-          src={currentTrack.audio_url}
+          src={getPlaybackUrl(currentTrack)}
           onEnded={() => setIsPlaying(false)}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}

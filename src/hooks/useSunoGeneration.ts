@@ -84,7 +84,7 @@ export function useSunoGeneration() {
       setState((prev) => ({
         ...prev,
         taskId,
-        progress: 'Music generation started! Check back in 1-2 minutes...',
+        progress: 'Music generation started! Your track will be ready in 30-40 seconds...',
       }));
 
       // Save to Supabase or localStorage
@@ -105,7 +105,7 @@ export function useSunoGeneration() {
         taskId,
         tracks: null,
         error: null,
-        progress: 'Waiting for music generation... This may take 1-2 minutes.',
+        progress: 'Creating your music... 30-40 seconds remaining!',
         remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
       });
 
@@ -345,20 +345,20 @@ export function useSunoGeneration() {
    */
   useEffect(() => {
     if (state.taskId && (state.status === 'generating' || state.status === 'polling')) {
-      // Start polling every 10 seconds
+      // Start polling every 5 seconds
       setState((prev) => ({
         ...prev,
         status: 'polling',
-        progress: 'Waiting for music generation... This may take 1-2 minutes.',
+        progress: 'Creating your music... 30-40 seconds remaining!',
       }));
 
       // Check immediately
       checkForTracks(state.taskId);
 
-      // Then poll every 10 seconds
+      // Then poll every 5 seconds for faster detection
       pollingIntervalRef.current = setInterval(() => {
         checkForTracks(state.taskId!);
-      }, 10000); // 10 seconds
+      }, 5000); // 5 seconds
 
       // Cleanup on unmount or when taskId changes
       return () => {

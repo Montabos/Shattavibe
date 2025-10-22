@@ -4,6 +4,7 @@ import { ArrowLeft, Play, Pause, Download, Share2, RotateCcw, Music2, Library, M
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService } from '@/lib/sessionStorageService';
+import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
 import type { SunoMusicTrack } from '@/types/suno';
 
 interface ResultScreenProps {
@@ -61,7 +62,7 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
 
   const handleDownload = async () => {
     const link = document.createElement('a');
-    link.href = currentTrack.audio_url;
+    link.href = getDownloadUrl(currentTrack);
     link.download = `${currentTrack.title}.mp3`;
     link.click();
     setShowMenu(false);
@@ -72,7 +73,7 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
       navigator.share({
         title: currentTrack.title,
         text: `Check out my track: ${currentTrack.title}`,
-        url: currentTrack.audio_url,
+        url: getDownloadUrl(currentTrack),
       });
     }
     setShowMenu(false);
@@ -188,7 +189,7 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
         {/* Hidden audio element */}
         <audio
           ref={audioRef}
-          src={currentTrack.audio_url}
+          src={getPlaybackUrl(currentTrack)}
           onEnded={() => setIsPlaying(false)}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}

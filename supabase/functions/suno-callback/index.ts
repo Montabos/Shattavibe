@@ -67,8 +67,9 @@ serve(async (req) => {
     console.log(`📝 Processing callback for task ${task_id}, type: ${callbackType}, code: ${code}`)
 
     // Update generation status based on callback type
-    if (code === 200 && callbackType === 'complete' && tracks && tracks.length > 0) {
-      console.log(`🎵 Received ${tracks.length} tracks for task ${task_id}`)
+    // Accept tracks from 'first' or 'complete' callbacks
+    if (code === 200 && (callbackType === 'complete' || callbackType === 'first') && tracks && tracks.length > 0) {
+      console.log(`🎵 Received ${tracks.length} tracks for task ${task_id} (callback: ${callbackType})`)
 
       // Try to get generation ID
       const { data: generation, error: genError } = await supabaseClient
@@ -111,31 +112,34 @@ serve(async (req) => {
           .update({ status: 'completed' })
           .eq('task_id', task_id)
 
-        // Insert anonymous tracks
-        const anonTrackInserts = tracks.map((track) => ({
+        // Upsert anonymous tracks (insert or update if exists)
+        const anonTrackUpserts = tracks.map((track) => ({
           task_id: task_id,
           suno_id: track.id,
           title: track.title,
           tags: track.tags,
           prompt: track.prompt,
           model_name: track.model_name,
-          audio_url: track.audio_url,
-          source_audio_url: track.source_audio_url,
-          stream_audio_url: track.stream_audio_url,
-          image_url: track.image_url,
+          audio_url: track.audio_url || '',
+          source_audio_url: track.source_audio_url || '',
+          stream_audio_url: track.stream_audio_url || '',
+          image_url: track.image_url || '',
           duration: track.duration,
         }))
 
         const { error: anonTracksError } = await supabaseClient
           .from('anonymous_tracks')
-          .insert(anonTrackInserts)
+          .upsert(anonTrackUpserts, { 
+            onConflict: 'task_id,suno_id',
+            ignoreDuplicates: false 
+          })
 
         if (anonTracksError) {
-          console.error('❌ Error inserting anonymous tracks:', anonTracksError)
+          console.error('❌ Error upserting anonymous tracks:', anonTracksError)
           throw anonTracksError
         }
 
-        console.log(`✅ Successfully saved ${tracks.length} anonymous tracks for task ${task_id}`)
+        console.log(`✅ Successfully saved ${tracks.length} anonymous tracks for task ${task_id} (callback: ${callbackType})`)
         
         return new Response(
           JSON.stringify({ status: 'received', task_id, type: 'anonymous' }),
@@ -159,31 +163,34 @@ serve(async (req) => {
         throw updateError
       }
 
-      // Insert tracks
-      const trackInserts = tracks.map((track) => ({
+      // Upsert tracks (insert or update if exists)
+      const trackUpserts = tracks.map((track) => ({
         generation_id: generation.id,
         suno_id: track.id,
         title: track.title,
         tags: track.tags,
         prompt: track.prompt,
         model_name: track.model_name,
-        audio_url: track.audio_url,
-        source_audio_url: track.source_audio_url,
-        stream_audio_url: track.stream_audio_url,
-        image_url: track.image_url,
+        audio_url: track.audio_url || '',
+        source_audio_url: track.source_audio_url || '',
+        stream_audio_url: track.stream_audio_url || '',
+        image_url: track.image_url || '',
         duration: track.duration,
       }))
 
       const { error: tracksError } = await supabaseClient
         .from('tracks')
-        .insert(trackInserts)
+        .upsert(trackUpserts, { 
+          onConflict: 'generation_id,suno_id',
+          ignoreDuplicates: false 
+        })
 
       if (tracksError) {
-        console.error('❌ Error inserting tracks:', tracksError)
+        console.error('❌ Error upserting tracks:', tracksError)
         throw tracksError
       }
 
-      console.log(`✅ Successfully saved ${tracks.length} tracks for task ${task_id}`)
+      console.log(`✅ Successfully saved ${tracks.length} tracks for task ${task_id} (callback: ${callbackType})`)
     } else if (code !== 200 || callbackType === 'error') {
       console.log(`❌ Task ${task_id} failed: ${msg}`)
 

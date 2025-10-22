@@ -4,6 +4,7 @@ import { ArrowLeft, Play, Pause, Download, Music2, Library } from 'lucide-react'
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService, type SessionGeneration } from '@/lib/sessionStorageService';
+import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
 
 interface LibraryScreenProps {
   onBack: () => void;
@@ -41,7 +42,7 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
   const handleDownload = async () => {
     if (currentTrack) {
       const link = document.createElement('a');
-      link.href = currentTrack.audio_url;
+      link.href = getDownloadUrl(currentTrack);
       link.download = `${currentTrack.title}.mp3`;
       link.click();
     }
@@ -187,7 +188,7 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                   {/* Hidden audio element */}
                   <audio
                     ref={audioRef}
-                    src={currentTrack.audio_url}
+                    src={getPlaybackUrl(currentTrack)}
                     onEnded={() => setIsPlaying(false)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
