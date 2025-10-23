@@ -2,7 +2,7 @@
 
 import { supabase } from './supabase';
 import { LocalStorageService } from './localStorageService';
-import type { SunoMusicTrack } from '@/types/suno';
+import type { SunoMusicTrack, LanguageCode, VocalGender } from '@/types/suno';
 import type { Database } from '@/types/database';
 
 type Generation = Database['public']['Tables']['generations']['Row'];
@@ -28,7 +28,8 @@ export class GenerationService {
     prompt: string;
     model: string;
     instrumental: boolean;
-    vocalGender?: 'm' | 'f';
+    language?: LanguageCode;
+    vocalGender?: VocalGender;
     negativeTags?: string;
   }): Promise<Generation | null> {
     const { data: { user } } = await supabase.auth.getUser();
@@ -41,6 +42,7 @@ export class GenerationService {
         prompt: data.prompt,
         model: data.model,
         instrumental: data.instrumental,
+        language: data.language,
         vocalGender: data.vocalGender,
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -54,6 +56,7 @@ export class GenerationService {
           prompt: data.prompt,
           model: data.model,
           instrumental: data.instrumental,
+          language: data.language || null,
           vocal_gender: data.vocalGender || null,
           status: 'pending',
         });
@@ -72,6 +75,7 @@ export class GenerationService {
       prompt: data.prompt,
       model: data.model,
       instrumental: data.instrumental,
+      language: data.language || null,
       vocal_gender: data.vocalGender || null,
       negative_tags: data.negativeTags || null,
       status: 'pending',

@@ -3,6 +3,7 @@
 export type SunoModel = 'V3_5' | 'V4' | 'V4_5' | 'V4_5PLUS' | 'V5';
 export type VocalGender = 'm' | 'f';
 export type CallbackType = 'text' | 'first' | 'complete' | 'error';
+export type LanguageCode = 'en' | 'fr' | 'es' | 'de' | 'it' | 'pt' | 'nl' | 'ja' | 'zh' | 'ko' | 'ar' | 'hi' | 'ru';
 
 // Request Types
 export interface SunoGenerateRequest {

@@ -10,6 +10,7 @@ export interface SessionGeneration {
 }
 
 const SESSION_KEY = 'shattavibe_session_generations';
+const LANGUAGE_KEY = 'shattavibe_preferred_language';
 
 export class SessionStorageService {
   /**
@@ -81,6 +82,29 @@ export class SessionStorageService {
   static getLatestGeneration(): SessionGeneration | null {
     const generations = this.getSessionGenerations();
     return generations.length > 0 ? generations[0] : null;
+  }
+
+  /**
+   * Save preferred language for the session
+   */
+  static setPreferredLanguage(languageCode: string): void {
+    try {
+      sessionStorage.setItem(LANGUAGE_KEY, languageCode);
+    } catch (error) {
+      console.error('Error saving preferred language:', error);
+    }
+  }
+
+  /**
+   * Get preferred language from session
+   */
+  static getPreferredLanguage(): string | null {
+    try {
+      return sessionStorage.getItem(LANGUAGE_KEY);
+    } catch (error) {
+      console.error('Error reading preferred language:', error);
+      return null;
+    }
   }
 }
 

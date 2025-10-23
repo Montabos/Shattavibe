@@ -3,9 +3,7 @@
 import { SUNO_CONFIG } from '@/config/suno';
 import type {
   SunoApiResponse,
-  SunoGenerateRequest,
   SunoGenerateResponse,
-  SunoMusicTrack,
   SunoSimpleModeRequest,
 } from '@/types/suno';
 
@@ -49,15 +47,21 @@ class SunoApiClient {
     prompt: string;
     instrumental?: boolean;
     model?: SunoSimpleModeRequest['model'];
+    language?: string;
     vocalGender?: 'm' | 'f';
     negativeTags?: string;
     callBackUrl: string;
   }): Promise<string> {
+    // Append language to prompt if provided
+    const promptWithLanguage = params.language 
+      ? `${params.prompt} [Language: ${params.language}]`
+      : params.prompt;
+    
     const request: SunoSimpleModeRequest = {
       customMode: false,
       instrumental: params.instrumental ?? SUNO_CONFIG.defaults.instrumental,
       model: params.model ?? SUNO_CONFIG.defaults.model,
-      prompt: params.prompt,
+      prompt: promptWithLanguage,
       callBackUrl: params.callBackUrl,
       ...(params.vocalGender && { vocalGender: params.vocalGender }),
       ...(params.negativeTags && { negativeTags: params.negativeTags }),

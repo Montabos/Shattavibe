@@ -6,7 +6,7 @@ import { GenerationService } from '@/lib/generationService';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { supabase } from '@/lib/supabase';
-import type { SunoMusicTrack, SunoModel, VocalGender } from '@/types/suno';
+import type { SunoMusicTrack, SunoModel, LanguageCode, VocalGender } from '@/types/suno';
 
 type GenerationStatus = 'idle' | 'generating' | 'polling' | 'completed' | 'error' | 'limit_reached';
 
@@ -23,6 +23,7 @@ export interface GenerateParams {
   prompt: string;
   instrumental?: boolean;
   model?: SunoModel;
+  language?: LanguageCode;
   vocalGender?: VocalGender;
   negativeTags?: string;
 }
@@ -93,6 +94,7 @@ export function useSunoGeneration() {
         prompt: params.prompt,
         model: params.model || 'V4_5',
         instrumental: params.instrumental || false,
+        language: params.language,
         vocalGender: params.vocalGender,
         negativeTags: params.negativeTags,
       });

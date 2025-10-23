@@ -1,9 +1,11 @@
 import { motion } from 'motion/react';
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Play, Pause, Download, Share2, RotateCcw, Music2, Library, MoreVertical } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Download, Share2, RotateCcw, Music2, Library, MoreVertical, Zap } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService } from '@/lib/sessionStorageService';
+import { LocalStorageService } from '@/lib/localStorageService';
+import { GenerationService } from '@/lib/generationService';
 import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
 import type { SunoMusicTrack } from '@/types/suno';
 
@@ -12,11 +14,12 @@ interface ResultScreenProps {
   onRegenerate: () => void;
   onProfileClick: () => void;
   onLibraryClick?: () => void;
+  onAuthClick?: () => void;
   tracks: SunoMusicTrack[];
   username: string | null;
 }
 
-export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryClick, tracks, username }: ResultScreenProps) {
+export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryClick, onAuthClick, tracks, username }: ResultScreenProps) {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -24,6 +27,18 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
   const [showMenu, setShowMenu] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const sessionCount = SessionStorageService.getSessionCount();
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  useEffect(() => {
+    const checkAuth = async () => {
+      const authenticated = await GenerationService.isAuthenticated();
+      setIsAuthenticated(authenticated);
+    };
+    checkAuth();
+  }, []);
+  
+  const hasReachedLimit = !isAuthenticated && LocalStorageService.hasReachedFreeLimit();
 
   const currentTrack = tracks[currentTrackIndex];
 
@@ -92,6 +107,14 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleRegenerate = () => {
+    if (hasReachedLimit && onAuthClick) {
+      onAuthClick();
+      return;
+    }
+    onRegenerate();
   };
 
   return (
@@ -344,11 +367,39 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
           transition={{ delay: 0.9 }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={onRegenerate}
-          className="w-full py-5 rounded-3xl bg-white/20 backdrop-blur-xl flex items-center justify-center gap-2"
+          onClick={handleRegenerate}
+          className="w-full py-5 rounded-3xl shadow-2xl relative overflow-hidden"
+          style={{
+            background: hasReachedLimit ? 'white' : 'rgba(255,255,255,0.2)',
+          }}
         >
-          <RotateCcw className="w-5 h-5 text-white" />
-          <span className="text-white">Make Another Banger</span>
+          <motion.div
+            animate={{
+              boxShadow: hasReachedLimit
+                ? ['0 0 20px rgba(255,105,180,0.5)', '0 0 40px rgba(0,191,255,0.5)', '0 0 20px rgba(255,105,180,0.5)']
+                : '0 0 0px rgba(0,0,0,0)',
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="absolute inset-0 rounded-3xl"
+          />
+          
+          <span className="relative z-10 flex items-center justify-center gap-2">
+            {hasReachedLimit ? (
+              <>
+                <Zap className="w-5 h-5" style={{ color: '#FF69B4' }} />
+                <span 
+                  className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#FF69B4] to-[#00BFFF]"
+                >
+                  Sign in to generate more
+                </span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-5 h-5 text-white" />
+                <span className="text-white">Make Another Banger</span>
+              </>
+            )}
+          </span>
         </motion.button>
       </div>
     </div>

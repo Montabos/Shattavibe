@@ -8,7 +8,7 @@ import { LibraryScreen } from './components/LibraryScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { useSunoGeneration } from './hooks/useSunoGeneration';
 import { supabase } from './lib/supabase';
-import type { VocalGender } from './types/suno';
+import type { LanguageCode, VocalGender } from './types/suno';
 
 type Screen = 'home' | 'generator' | 'generating' | 'result' | 'profile' | 'library' | 'auth';
 
@@ -73,6 +73,7 @@ export default function App() {
   const handleGenerate = async (params: {
     prompt: string;
     instrumental: boolean;
+    language?: LanguageCode;
     vocalGender?: VocalGender;
   }) => {
     setCurrentScreen('generating');
@@ -140,6 +141,7 @@ export default function App() {
           }}
           onProfileClick={handleProfileClick}
           onLibraryClick={handleProfileClick}
+          onAuthClick={() => setCurrentScreen('auth')}
           tracks={generation.tracks}
           username={username}
         />

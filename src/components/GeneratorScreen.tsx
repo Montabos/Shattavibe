@@ -1,28 +1,55 @@
 import { motion } from 'motion/react';
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Zap, Music2, Sparkles, Mic, MicOff, Gift, Library } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, Zap, Sparkles, Gift, Library, ChevronDown } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { GenerationService } from '@/lib/generationService';
-import type { VocalGender } from '@/types/suno';
+import type { LanguageCode, VocalGender } from '@/types/suno';
 
 interface GeneratorScreenProps {
   onBack: () => void;
   onGenerate: (params: {
     prompt: string;
     instrumental: boolean;
+    language?: LanguageCode;
     vocalGender?: VocalGender;
   }) => void;
   onLibraryClick?: () => void;
   onAuthClick?: () => void;
 }
 
+// Language options with country codes and names
+const LANGUAGES = [
+  { code: 'en' as LanguageCode, flag: 'EN', name: 'English' },
+  { code: 'fr' as LanguageCode, flag: 'FR', name: 'Français' },
+  { code: 'es' as LanguageCode, flag: 'ES', name: 'Español' },
+  { code: 'de' as LanguageCode, flag: 'DE', name: 'Deutsch' },
+  { code: 'it' as LanguageCode, flag: 'IT', name: 'Italiano' },
+  { code: 'pt' as LanguageCode, flag: 'PT', name: 'Português' }
+];
+
+// Detect browser language
+const getBrowserLanguage = (): LanguageCode => {
+  const browserLang = navigator.language.split('-')[0]; // Get 'en' from 'en-US'
+  const supported = LANGUAGES.find(lang => lang.code === browserLang);
+  return supported ? supported.code : 'en';
+};
+
 export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClick }: GeneratorScreenProps) {
   const [prompt, setPrompt] = useState('');
   const [selectedVibe, setSelectedVibe] = useState<string>('hype');
-  const [instrumental, setInstrumental] = useState(false);
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [vocalGender, setVocalGender] = useState<VocalGender | undefined>(undefined);
+  const languageButtonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  
+  // Get language from session or browser
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(() => {
+    const savedLang = SessionStorageService.getPreferredLanguage();
+    return (savedLang as LanguageCode) || getBrowserLanguage();
+  });
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
@@ -37,6 +64,75 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
   const remainingFree = LocalStorageService.getRemainingFreeGenerations();
   const hasReachedLimit = !isAuthenticated && LocalStorageService.hasReachedFreeLimit();
   const sessionCount = SessionStorageService.getSessionCount();
+  
+  // Save language preference when it changes
+  useEffect(() => {
+    SessionStorageService.setPreferredLanguage(selectedLanguage);
+  }, [selectedLanguage]);
+
+  // Update dropdown position on scroll/resize
+  useEffect(() => {
+    const updateDropdownPosition = () => {
+      if (languageButtonRef.current) {
+        const rect = languageButtonRef.current.getBoundingClientRect();
+        const dropdownWidth = 200; // Largeur minimale du dropdown
+        
+        // Calculer la position de base
+        let left = rect.left;
+        
+        // Vérifier si le dropdown dépasse à droite de l'écran
+        if (left + dropdownWidth > window.innerWidth) {
+          // Aligner à droite du bouton
+          left = rect.right - dropdownWidth;
+        }
+        
+        // S'assurer que le dropdown ne dépasse pas à gauche
+        if (left < 0) {
+          left = 8; // Marge de 8px
+        }
+        
+        setDropdownPosition({
+          top: rect.bottom + 8,
+          left: left,
+          width: Math.min(dropdownWidth, window.innerWidth - 16), // 16px de marge totale
+        });
+      }
+    };
+
+    if (showLanguageDropdown) {
+      updateDropdownPosition();
+      
+      // Mise à jour fluide avec requestAnimationFrame
+      const handleUpdate = () => {
+        requestAnimationFrame(updateDropdownPosition);
+      };
+      
+      window.addEventListener('scroll', handleUpdate, true);
+      window.addEventListener('resize', handleUpdate);
+      
+      return () => {
+        window.removeEventListener('scroll', handleUpdate, true);
+        window.removeEventListener('resize', handleUpdate);
+      };
+    }
+  }, [showLanguageDropdown]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (showLanguageDropdown) {
+        setShowLanguageDropdown(false);
+      }
+    };
+    
+    if (showLanguageDropdown) {
+      document.addEventListener('click', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [showLanguageDropdown]);
 
   const vibes = [
     { id: 'hype', label: 'Hype 🔥', color: 'from-[#FF6B6B] to-[#FF8E53]', style: 'energetic dancehall' },
@@ -60,11 +156,14 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
     if (prompt.trim()) {
       onGenerate({
         prompt: `${prompt} ${vibes.find(v => v.id === selectedVibe)?.style || ''}`,
-        instrumental,
-        vocalGender: instrumental ? undefined : vocalGender,
+        instrumental: false, // Always with vocals
+        language: selectedLanguage,
+        vocalGender: vocalGender,
       });
     }
   };
+  
+  const selectedLanguageData = LANGUAGES.find(lang => lang.code === selectedLanguage) || LANGUAGES[0];
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -184,45 +283,47 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
             rows={4}
           />
           
-          {/* Voice options */}
-          <div className="flex gap-3 items-center">
+          {/* Language and Voice selector */}
+          <div className="grid grid-cols-3 gap-2">
+            {/* Language selector */}
+            <div className="relative">
+              <motion.button
+                ref={languageButtonRef}
+                whileTap={{ scale: 0.95 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowLanguageDropdown(!showLanguageDropdown);
+                }}
+                className="w-full py-3 rounded-xl bg-white/20 backdrop-blur-xl flex items-center justify-center gap-1"
+              >
+                <span className="text-white text-xs font-bold">{selectedLanguageData.flag}</span>
+                <ChevronDown className={`w-3 h-3 text-white transition-transform ${showLanguageDropdown ? 'rotate-180' : ''}`} />
+              </motion.button>
+            </div>
+            
+            {/* Voice gender selector - Male */}
             <motion.button
               whileTap={{ scale: 0.95 }}
-              onClick={() => setInstrumental(!instrumental)}
-              className={`flex-1 py-3 px-4 rounded-xl backdrop-blur-xl transition-all ${
-                instrumental ? 'bg-white/30' : 'bg-white/10'
+              onClick={() => setVocalGender(vocalGender === 'm' ? undefined : 'm')}
+              className={`py-3 rounded-xl backdrop-blur-xl transition-all flex items-center justify-center gap-1 ${
+                vocalGender === 'm' ? 'bg-white/30' : 'bg-white/10'
               }`}
             >
-              <div className="flex items-center justify-center gap-2">
-                {instrumental ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4 text-white" />}
-                <span className="text-white text-sm">
-                  {instrumental ? 'Instrumental' : 'With Vocals'}
-                </span>
-              </div>
+              <span className="text-white text-sm">♂</span>
+              <span className="text-white text-xs">Male</span>
             </motion.button>
-
-            {!instrumental && (
-              <div className="flex gap-2">
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setVocalGender(vocalGender === 'm' ? undefined : 'm')}
-                  className={`py-3 px-6 rounded-xl backdrop-blur-xl transition-all ${
-                    vocalGender === 'm' ? 'bg-white/30' : 'bg-white/10'
-                  }`}
-                >
-                  <span className="text-white text-sm">♂ Male</span>
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setVocalGender(vocalGender === 'f' ? undefined : 'f')}
-                  className={`py-3 px-6 rounded-xl backdrop-blur-xl transition-all ${
-                    vocalGender === 'f' ? 'bg-white/30' : 'bg-white/10'
-                  }`}
-                >
-                  <span className="text-white text-sm">♀ Female</span>
-                </motion.button>
-              </div>
-            )}
+            
+            {/* Voice gender selector - Female */}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setVocalGender(vocalGender === 'f' ? undefined : 'f')}
+              className={`py-3 rounded-xl backdrop-blur-xl transition-all flex items-center justify-center gap-1 ${
+                vocalGender === 'f' ? 'bg-white/30' : 'bg-white/10'
+              }`}
+            >
+              <span className="text-white text-sm">♀</span>
+              <span className="text-white text-xs">Female</span>
+            </motion.button>
           </div>
         </FloatingCard>
 
@@ -282,6 +383,48 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
           </span>
         </motion.button>
       </div>
+
+      {/* Language dropdown - rendered as portal for proper z-index */}
+      {showLanguageDropdown && createPortal(
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.15 }}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            width: `${dropdownPosition.width}px`,
+            zIndex: 99999,
+          }}
+          className="bg-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl border border-white/20 max-h-64 overflow-y-auto"
+        >
+          {LANGUAGES.map((lang) => (
+            <motion.button
+              key={lang.code}
+              whileTap={{ scale: 0.98 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedLanguage(lang.code);
+                setShowLanguageDropdown(false);
+              }}
+              className={`w-full px-4 py-3 flex items-center gap-3 transition ${
+                selectedLanguage === lang.code
+                  ? 'bg-white/20'
+                  : 'hover:bg-white/10'
+              }`}
+            >
+              <span className="text-white text-xs font-bold bg-white/10 px-2 py-1 rounded">{lang.flag}</span>
+              <span className="text-white text-sm">{lang.name}</span>
+              {selectedLanguage === lang.code && (
+                <span className="ml-auto text-white">✓</span>
+              )}
+            </motion.button>
+          ))}
+        </motion.div>,
+        document.body
+      )}
     </div>
   );
 }
