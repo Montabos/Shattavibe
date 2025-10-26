@@ -156,15 +156,15 @@ export function useSunoGeneration() {
           .from('generations')
           .select('id, status')
           .eq('task_id', taskId)
-          .single();
+          .maybeSingle();
 
-        if (genError && genError.code !== 'PGRST116') {
+        if (genError) {
           console.error('Error checking generation:', genError);
           return false;
         }
 
         // If not found in authenticated table, will check anonymous table below
-        if (!generation || (genError && genError.code === 'PGRST116')) {
+        if (!generation) {
           console.log('⚠️ Not found in generations table, checking anonymous_generations...');
           shouldCheckAnonymous = true;
         } else {
@@ -210,7 +210,7 @@ export function useSunoGeneration() {
               .from('generations')
               .select('prompt')
               .eq('id', generation.id)
-              .single();
+              .maybeSingle();
             
             const prompt = genData?.prompt || 'Generated music';
             
@@ -252,7 +252,7 @@ export function useSunoGeneration() {
           .from('anonymous_generations')
           .select('status')
           .eq('task_id', taskId)
-          .single();
+          .maybeSingle();
 
         if (anonError) {
           console.error('❌ Error checking anonymous generation:', anonError);

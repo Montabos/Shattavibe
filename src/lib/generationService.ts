@@ -160,9 +160,10 @@ export class GenerationService {
       .from('generations')
       .select('id')
       .eq('task_id', taskId)
-      .single();
+      .maybeSingle();
 
     if (genError) throw genError;
+    if (!generation) throw new Error('Generation not found');
 
     // Insert tracks
     const trackInserts: TrackInsert[] = tracks.map((track) => ({
@@ -235,12 +236,9 @@ export class GenerationService {
       .from('generations')
       .select('*')
       .eq('task_id', taskId)
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      if (error.code === 'PGRST116') return null; // Not found
-      throw error;
-    }
+    if (error) throw error;
     return data;
   }
 

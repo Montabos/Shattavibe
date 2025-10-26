@@ -39,7 +39,7 @@ const getBrowserLanguage = (): LanguageCode => {
 
 export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClick }: GeneratorScreenProps) {
   const [prompt, setPrompt] = useState('');
-  const [selectedVibe, setSelectedVibe] = useState<string>('hype');
+  const [selectedVibe, setSelectedVibe] = useState<string>('style1');
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [vocalGender, setVocalGender] = useState<VocalGender | undefined>(undefined);
   const languageButtonRef = useRef<HTMLButtonElement>(null);
@@ -135,16 +135,14 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
   }, [showLanguageDropdown]);
 
   const vibes = [
-    { id: 'hype', label: 'Hype 🔥', color: 'from-[#FF6B6B] to-[#FF8E53]', style: 'energetic dancehall' },
-    { id: 'chill', label: 'Chill 🌴', color: 'from-[#4FACFE] to-[#00F2FE]', style: 'relaxed reggae' },
-    { id: 'party', label: 'Party 🎉', color: 'from-[#FA709A] to-[#FEE140]', style: 'upbeat bouyon' },
-    { id: 'vibes', label: 'Vibes ✨', color: 'from-[#A8EDEA] to-[#FED6E3]', style: 'smooth afrobeat' },
+    { id: 'style1', label: 'Style 1 🔥', color: 'from-[#FF6B6B] to-[#FF8E53]', style: 'Gospel afro-house drill and bass' },
+    { id: 'style2', label: 'Style 2 ✨', color: 'from-[#4FACFE] to-[#00F2FE]', style: 'choral afro-jazz' },
   ];
 
   const suggestions = [
-    "Shout out Jamal and Keisha in a hype Bouyon vibe",
-    "Birthday track for Sarah with island vibes",
-    "Weekend anthem for the crew",
+    "Uplifting gospel track celebrating life",
+    "Soulful jazz tribute for a special occasion",
+    "Energetic spiritual anthem for the community",
   ];
 
   const handleGenerate = () => {
