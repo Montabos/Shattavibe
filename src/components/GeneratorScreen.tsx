@@ -1,55 +1,24 @@
 import { motion } from 'motion/react';
-import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { ArrowLeft, Zap, Sparkles, Gift, Library, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Zap, Sparkles, Gift, Library } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { GenerationService } from '@/lib/generationService';
-import type { LanguageCode, VocalGender } from '@/types/suno';
 
 interface GeneratorScreenProps {
   onBack: () => void;
   onGenerate: (params: {
     prompt: string;
     instrumental: boolean;
-    language?: LanguageCode;
-    vocalGender?: VocalGender;
   }) => void;
   onLibraryClick?: () => void;
   onAuthClick?: () => void;
 }
 
-// Language options with country codes and names
-const LANGUAGES = [
-  { code: 'en' as LanguageCode, flag: 'EN', name: 'English' },
-  { code: 'fr' as LanguageCode, flag: 'FR', name: 'Français' },
-  { code: 'es' as LanguageCode, flag: 'ES', name: 'Español' },
-  { code: 'de' as LanguageCode, flag: 'DE', name: 'Deutsch' },
-  { code: 'it' as LanguageCode, flag: 'IT', name: 'Italiano' },
-  { code: 'pt' as LanguageCode, flag: 'PT', name: 'Português' }
-];
-
-// Detect browser language
-const getBrowserLanguage = (): LanguageCode => {
-  const browserLang = navigator.language.split('-')[0]; // Get 'en' from 'en-US'
-  const supported = LANGUAGES.find(lang => lang.code === browserLang);
-  return supported ? supported.code : 'en';
-};
-
 export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClick }: GeneratorScreenProps) {
   const [prompt, setPrompt] = useState('');
-  const [selectedVibe, setSelectedVibe] = useState<string>('style1');
-  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const [vocalGender, setVocalGender] = useState<VocalGender | undefined>(undefined);
-  const languageButtonRef = useRef<HTMLButtonElement>(null);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
-  
-  // Get language from session or browser
-  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(() => {
-    const savedLang = SessionStorageService.getPreferredLanguage();
-    return (savedLang as LanguageCode) || getBrowserLanguage();
-  });
+  const [musicStyle, setMusicStyle] = useState<string>('');
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
@@ -64,85 +33,16 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
   const remainingFree = LocalStorageService.getRemainingFreeGenerations();
   const hasReachedLimit = !isAuthenticated && LocalStorageService.hasReachedFreeLimit();
   const sessionCount = SessionStorageService.getSessionCount();
-  
-  // Save language preference when it changes
-  useEffect(() => {
-    SessionStorageService.setPreferredLanguage(selectedLanguage);
-  }, [selectedLanguage]);
 
-  // Update dropdown position on scroll/resize
-  useEffect(() => {
-    const updateDropdownPosition = () => {
-      if (languageButtonRef.current) {
-        const rect = languageButtonRef.current.getBoundingClientRect();
-        const dropdownWidth = 200; // Largeur minimale du dropdown
-        
-        // Calculer la position de base
-        let left = rect.left;
-        
-        // Vérifier si le dropdown dépasse à droite de l'écran
-        if (left + dropdownWidth > window.innerWidth) {
-          // Aligner à droite du bouton
-          left = rect.right - dropdownWidth;
-        }
-        
-        // S'assurer que le dropdown ne dépasse pas à gauche
-        if (left < 0) {
-          left = 8; // Marge de 8px
-        }
-        
-        setDropdownPosition({
-          top: rect.bottom + 8,
-          left: left,
-          width: Math.min(dropdownWidth, window.innerWidth - 16), // 16px de marge totale
-        });
-      }
-    };
-
-    if (showLanguageDropdown) {
-      updateDropdownPosition();
-      
-      // Mise à jour fluide avec requestAnimationFrame
-      const handleUpdate = () => {
-        requestAnimationFrame(updateDropdownPosition);
-      };
-      
-      window.addEventListener('scroll', handleUpdate, true);
-      window.addEventListener('resize', handleUpdate);
-      
-      return () => {
-        window.removeEventListener('scroll', handleUpdate, true);
-        window.removeEventListener('resize', handleUpdate);
-      };
-    }
-  }, [showLanguageDropdown]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (showLanguageDropdown) {
-        setShowLanguageDropdown(false);
-      }
-    };
-    
-    if (showLanguageDropdown) {
-      document.addEventListener('click', handleClickOutside);
-    }
-    
-    return () => {
-      document.removeEventListener('click', handleClickOutside);
-    };
-  }, [showLanguageDropdown]);
-
-  const vibes = [
-    { id: 'style1', label: 'Style 1 🔥', color: 'from-[#FF6B6B] to-[#FF8E53]', style: 'Gospel afro-house drill and bass' },
-    { id: 'style2', label: 'Style 2 ✨', color: 'from-[#4FACFE] to-[#00F2FE]', style: 'choral afro-jazz' },
-  ];
-
-  const suggestions = [
-    "Uplifting gospel track celebrating life",
-    "Soulful jazz tribute for a special occasion",
-    "Energetic spiritual anthem for the community",
+  const stylePresets = [
+    "Gospel afro-house drill and bass",
+    "Choral afro-jazz",
+    "Afrobeat",
+    "Drill",
+    "Trap",
+    "Dancehall",
+    "Hip-hop",
+    "R&B",
   ];
 
   const handleGenerate = () => {
@@ -152,16 +52,13 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
     }
     
     if (prompt.trim()) {
+      const fullPrompt = musicStyle ? `${prompt} in ${musicStyle} style` : prompt;
       onGenerate({
-        prompt: `${prompt} ${vibes.find(v => v.id === selectedVibe)?.style || ''}`,
-        instrumental: false, // Always with vocals
-        language: selectedLanguage,
-        vocalGender: vocalGender,
+        prompt: fullPrompt,
+        instrumental: false,
       });
     }
   };
-  
-  const selectedLanguageData = LANGUAGES.find(lang => lang.code === selectedLanguage) || LANGUAGES[0];
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -241,111 +138,49 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
           className="text-center mb-12"
         >
           <h1 className="text-5xl text-white mb-3">
-            Drop the Bass!
+            What's the vibe?
           </h1>
-          <p className="text-white/70">What's your vibe today?</p>
+          <p className="text-white/70">Tell us about your friends, what you wanna say</p>
         </motion.div>
 
-        {/* Vibe selector */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-6"
-        >
-          <div className="grid grid-cols-2 gap-3 mb-8">
-            {vibes.map((vibe) => (
-              <motion.button
-                key={vibe.id}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSelectedVibe(vibe.id)}
-                className={`py-4 px-6 rounded-2xl backdrop-blur-xl transition-all ${
-                  selectedVibe === vibe.id
-                    ? 'bg-white/30 shadow-xl'
-                    : 'bg-white/10'
-                }`}
-              >
-                <span className="text-white">{vibe.label}</span>
-              </motion.button>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Input area */}
+        {/* Input area - Main prompt */}
         <FloatingCard delay={0.2} className="mb-6">
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Type your vibe... e.g., 'Shout out my crew in a party Bouyon track'"
-            className="w-full bg-transparent text-white placeholder:text-white/50 outline-none resize-none mb-4"
-            rows={4}
+            placeholder="e.g., 'Birthday track for Alex - he's turning 30, loves gaming, terrible dancer but amazing cook, and his energy is unmatched'"
+            className="w-full bg-transparent text-white placeholder:text-white/50 outline-none resize-none"
+            rows={5}
           />
-          
-          {/* Language and Voice selector */}
-          <div className="grid grid-cols-3 gap-2">
-            {/* Language selector */}
-            <div className="relative">
-              <motion.button
-                ref={languageButtonRef}
-                whileTap={{ scale: 0.95 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowLanguageDropdown(!showLanguageDropdown);
-                }}
-                className="w-full py-3 rounded-xl bg-white/20 backdrop-blur-xl flex items-center justify-center gap-1"
-              >
-                <span className="text-white text-xs font-bold">{selectedLanguageData.flag}</span>
-                <ChevronDown className={`w-3 h-3 text-white transition-transform ${showLanguageDropdown ? 'rotate-180' : ''}`} />
-              </motion.button>
-            </div>
-            
-            {/* Voice gender selector - Male */}
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setVocalGender(vocalGender === 'm' ? undefined : 'm')}
-              className={`py-3 rounded-xl backdrop-blur-xl transition-all flex items-center justify-center gap-1 ${
-                vocalGender === 'm' ? 'bg-white/30' : 'bg-white/10'
-              }`}
-            >
-              <span className="text-white text-sm">♂</span>
-              <span className="text-white text-xs">Male</span>
-            </motion.button>
-            
-            {/* Voice gender selector - Female */}
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setVocalGender(vocalGender === 'f' ? undefined : 'f')}
-              className={`py-3 rounded-xl backdrop-blur-xl transition-all flex items-center justify-center gap-1 ${
-                vocalGender === 'f' ? 'bg-white/30' : 'bg-white/10'
-              }`}
-            >
-              <span className="text-white text-sm">♀</span>
-              <span className="text-white text-xs">Female</span>
-            </motion.button>
-          </div>
         </FloatingCard>
 
-        {/* Suggestions */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="mb-6"
-        >
-          <p className="text-white/60 text-sm mb-3">Try these:</p>
-          <div className="space-y-2">
-            {suggestions.map((suggestion, i) => (
+        {/* Music Style selector */}
+        <FloatingCard delay={0.3} className="mb-6">
+          <h3 className="text-white/90 mb-3 text-sm font-medium">Music Style</h3>
+          <input
+            type="text"
+            value={musicStyle}
+            onChange={(e) => setMusicStyle(e.target.value)}
+            placeholder="Enter a music style..."
+            className="w-full bg-white/10 text-white placeholder:text-white/40 outline-none px-4 py-3 rounded-xl mb-3"
+          />
+          <div className="flex flex-wrap gap-2">
+            {stylePresets.map((style) => (
               <motion.button
-                key={i}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setPrompt(suggestion)}
-                className="w-full text-left px-4 py-3 rounded-xl bg-white/10 backdrop-blur-xl text-white/80 text-sm"
+                key={style}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setMusicStyle(style)}
+                className={`px-4 py-2 rounded-full text-sm backdrop-blur-xl transition-all ${
+                  musicStyle === style
+                    ? 'bg-white/30 text-white'
+                    : 'bg-white/10 text-white/70'
+                }`}
               >
-                {suggestion}
+                {style}
               </motion.button>
             ))}
           </div>
-        </motion.div>
+        </FloatingCard>
 
         {/* Generate button */}
         <motion.button
@@ -381,48 +216,6 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
           </span>
         </motion.button>
       </div>
-
-      {/* Language dropdown - rendered as portal for proper z-index */}
-      {showLanguageDropdown && createPortal(
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.15 }}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            top: `${dropdownPosition.top}px`,
-            left: `${dropdownPosition.left}px`,
-            width: `${dropdownPosition.width}px`,
-            zIndex: 99999,
-          }}
-          className="bg-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl border border-white/20 max-h-64 overflow-y-auto"
-        >
-          {LANGUAGES.map((lang) => (
-            <motion.button
-              key={lang.code}
-              whileTap={{ scale: 0.98 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedLanguage(lang.code);
-                setShowLanguageDropdown(false);
-              }}
-              className={`w-full px-4 py-3 flex items-center gap-3 transition ${
-                selectedLanguage === lang.code
-                  ? 'bg-white/20'
-                  : 'hover:bg-white/10'
-              }`}
-            >
-              <span className="text-white text-xs font-bold bg-white/10 px-2 py-1 rounded">{lang.flag}</span>
-              <span className="text-white text-sm">{lang.name}</span>
-              {selectedLanguage === lang.code && (
-                <span className="ml-auto text-white">✓</span>
-              )}
-            </motion.button>
-          ))}
-        </motion.div>,
-        document.body
-      )}
     </div>
   );
 }

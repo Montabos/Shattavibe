@@ -1,6 +1,6 @@
 // Local Storage Service for Anonymous Users
 
-import type { SunoMusicTrack, LanguageCode, VocalGender } from '@/types/suno';
+import type { SunoMusicTrack } from '@/types/suno';
 
 export interface LocalGeneration {
   id: string;
@@ -8,15 +8,13 @@ export interface LocalGeneration {
   prompt: string;
   model: string;
   instrumental: boolean;
-  language?: LanguageCode;
-  vocalGender?: VocalGender;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   tracks?: SunoMusicTrack[];
   error?: string;
   createdAt: string;
 }
 
-const STORAGE_KEY = 'shattavibe_generations';
+const STORAGE_KEY = 'bangr_generations';
 const MAX_FREE_GENERATIONS = 2;
 
 export class LocalStorageService {

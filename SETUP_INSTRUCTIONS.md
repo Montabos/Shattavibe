@@ -1,4 +1,4 @@
-# 🎵 ShattaVibe - Instructions de Configuration
+# 🎵 Bangr - Instructions de Configuration
 
 ## 📋 Prérequis
 
@@ -31,7 +31,7 @@ VITE_SUPABASE_ANON_KEY=votre-anon-key
 2. Créez un compte (gratuit)
 3. Cliquez sur "New Project"
 4. Remplissez les informations :
-   - **Name**: ShattaVibe
+   - **Name**: Bangr
    - **Database Password**: (choisissez un mot de passe fort)
    - **Region**: Choisissez le plus proche de vous
    - **Pricing Plan**: Free
@@ -126,7 +126,7 @@ L'application sera disponible sur **http://localhost:3000**
 ## 🔍 Architecture du Projet
 
 ```
-ShattaVibe/
+Bangr/
 ├── src/
 │   ├── types/
 │   │   ├── suno.ts          # Types API Suno
@@ -248,7 +248,7 @@ git push origin main
 
 ## 🎉 Félicitations !
 
-Votre application ShattaVibe est maintenant :
+Votre application Bangr est maintenant :
 - ✅ Configurée pour générer de la musique avec Suno AI
 - ✅ Intégrée avec Supabase pour le stockage
 - ✅ Prête pour Lovable.dev

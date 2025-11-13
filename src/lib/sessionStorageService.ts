@@ -9,8 +9,8 @@ export interface SessionGeneration {
   createdAt: string;
 }
 
-const SESSION_KEY = 'shattavibe_session_generations';
-const LANGUAGE_KEY = 'shattavibe_preferred_language';
+const SESSION_KEY = 'bangr_session_generations';
+const LANGUAGE_KEY = 'bangr_preferred_language';
 
 export class SessionStorageService {
   /**

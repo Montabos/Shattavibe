@@ -14,13 +14,6 @@ export function HomeScreen({
   username,
 }: HomeScreenProps) {
   const today = new Date();
-  const month = today.toLocaleString("default", {
-    month: "long",
-  });
-  const day = today.getDate();
-  const dayName = today.toLocaleString("default", {
-    weekday: "long",
-  });
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -89,10 +82,10 @@ export function HomeScreen({
           className="text-center mb-16"
         >
           <h1 className="text-6xl text-white/60 tracking-tight">
-            Your
+            Make
           </h1>
           <h1 className="text-6xl text-white mb-2 tracking-tight">
-            Shatta
+            your tracks
           </h1>
         </motion.div>
 
@@ -103,10 +96,10 @@ export function HomeScreen({
               <Sparkles className="w-5 h-5 text-white/70 mt-1" />
               <div>
                 <p className="text-white/90 mb-2">
-                  Consistency drops the hottest beats
+                  Your bestie can’t dance?
                 </p>
                 <p className="text-white/50 text-sm">
-                  Daily Inspiration
+                Turn it into a roast track 💀
                 </p>
               </div>
             </div>
@@ -132,9 +125,9 @@ export function HomeScreen({
 
           <FloatingCard delay={0.6} rotation={-1}>
             <div>
-              <p className="text-white/90 mb-2">{dayName}</p>
+              <p className="text-white/90 mb-2">Hitting the club tonight?</p>
               <p className="text-white/50 text-sm">
-                Today's Vibe
+              Drop a team anthem 🎧
               </p>
             </div>
           </FloatingCard>
@@ -163,7 +156,7 @@ export function HomeScreen({
           />
           <span className="relative z-10 flex items-center justify-center gap-2">
             <Music className="w-5 h-5" />
-            Generate Your Banger
+            Generate My Banger
           </span>
         </motion.button>
       </div>

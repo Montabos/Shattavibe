@@ -8,14 +8,26 @@ interface GeneratingScreenProps {
   status: string;
   progress: string;
   error: string | null;
+  autoTransitionAfter?: number; // Auto-transition to result screen after X seconds
 }
 
-export function GeneratingScreen({ onComplete, status, progress, error }: GeneratingScreenProps) {
+export function GeneratingScreen({ onComplete, status, progress, error, autoTransitionAfter = 20000 }: GeneratingScreenProps) {
   const steps = [
     { icon: Music, text: 'Submitting request...', delay: 0 },
     { icon: Radio, text: 'AI is composing...', delay: 1 },
     { icon: Sparkles, text: 'Almost there! 🔥', delay: 2 },
   ];
+
+  // Auto-transition to result screen after specified delay
+  useEffect(() => {
+    if (!error && autoTransitionAfter > 0) {
+      const timer = setTimeout(() => {
+        onComplete();
+      }, autoTransitionAfter);
+
+      return () => clearTimeout(timer);
+    }
+  }, [error, autoTransitionAfter, onComplete]);
 
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center">

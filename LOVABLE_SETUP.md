@@ -23,7 +23,7 @@ Ce document explique comment ce projet est configuré pour être compatible avec
 ## 📁 Structure du Projet
 
 ```
-ShattaVibe/
+Bangr/
 ├── src/
 │   ├── lib/
 │   │   └── utils.ts           # Utilitaires (cn, etc.)

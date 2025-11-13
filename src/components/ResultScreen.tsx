@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Play, Pause, Download, Share2, RotateCcw, Music2, Library, MoreVertical, Zap } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Download, Share2, RotateCcw, Music2, Library, MoreVertical, Zap, Loader2 } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService } from '@/lib/sessionStorageService';
@@ -15,12 +15,13 @@ interface ResultScreenProps {
   onProfileClick: () => void;
   onLibraryClick?: () => void;
   onAuthClick?: () => void;
-  tracks: SunoMusicTrack[];
+  tracks: SunoMusicTrack[] | null;
   username: string | null;
+  generationPrompt?: string; // Prompt used for generation (for display while loading)
+  isLoading?: boolean; // True if tracks are still being generated
 }
 
-export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryClick, onAuthClick, tracks, username }: ResultScreenProps) {
-  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryClick, onAuthClick, tracks, username, generationPrompt, isLoading = false }: ResultScreenProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -40,7 +41,20 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
   
   const hasReachedLimit = !isAuthenticated && LocalStorageService.hasReachedFreeLimit();
 
-  const currentTrack = tracks[currentTrackIndex];
+  // Always use the first track only
+  const currentTrack = tracks && tracks.length > 0 ? tracks[0] : null;
+  const tracksReady = tracks && tracks.length > 0;
+
+  // Auto-play when tracks become available
+  useEffect(() => {
+    if (tracksReady && currentTrack && audioRef.current && !isPlaying) {
+      // Try to auto-play when track becomes ready
+      audioRef.current.play().catch((error) => {
+        console.log('Auto-play prevented by browser:', error);
+        // User will need to manually click play
+      });
+    }
+  }, [tracksReady, currentTrack]);
 
   // Update current time
   useEffect(() => {
@@ -57,7 +71,7 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
     };
-  }, [currentTrackIndex]);
+  }, [currentTrack]);
 
   const handlePlayPause = async () => {
     if (audioRef.current) {
@@ -199,36 +213,54 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
           <div className="inline-block">
             <div className="text-4xl mb-2">
               <span className="bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-transparent bg-clip-text">
-                {currentTrack.title}
+                {currentTrack ? currentTrack.title : (generationPrompt || 'Your Track')}
               </span>
             </div>
-            <p className="text-white/80 text-sm">{currentTrack.tags}</p>
-            <p className="text-white/60 text-xs mt-1">
-              {formatDuration(currentTrack.duration)} • {currentTrack.model_name}
-            </p>
+            {currentTrack ? (
+              <>
+                <p className="text-white/80 text-sm">{currentTrack.tags}</p>
+                <p className="text-white/60 text-xs mt-1">
+                  {formatDuration(currentTrack.duration)} • {currentTrack.model_name}
+                </p>
+              </>
+            ) : (
+              <div className="flex items-center justify-center gap-2 mt-2">
+                <Loader2 className="w-4 h-4 text-white/60 animate-spin" />
+                <p className="text-white/60 text-sm">Generating your banger...</p>
+              </div>
+            )}
           </div>
         </motion.div>
 
         {/* Hidden audio element */}
-        <audio
-          ref={audioRef}
-          src={getPlaybackUrl(currentTrack)}
-          onEnded={() => setIsPlaying(false)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-        />
+        {currentTrack && (
+          <audio
+            ref={audioRef}
+            src={getPlaybackUrl(currentTrack)}
+            onEnded={() => setIsPlaying(false)}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+          />
+        )}
 
         {/* Audio player card */}
         <FloatingCard delay={0.4} rotation={0} className="mb-6">
           {/* Player controls */}
           <div className="flex items-center justify-between mb-4">
             <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handlePlayPause}
+              whileHover={tracksReady ? { scale: 1.05 } : {}}
+              whileTap={tracksReady ? { scale: 0.95 } : {}}
+              onClick={tracksReady ? handlePlayPause : undefined}
               className="w-14 h-14 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center shadow-2xl"
             >
-              {isPlaying ? (
+              {!tracksReady ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                >
+                  <Loader2 className="w-7 h-7 text-white" />
+                </motion.div>
+              ) : isPlaying ? (
                 <Pause className="w-7 h-7 text-white" fill="white" />
               ) : (
                 <Play className="w-7 h-7 text-white ml-1" fill="white" />
@@ -236,44 +268,50 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
             </motion.button>
 
             <div className="flex-1 mx-4">
-              <p className="text-white/90 text-sm font-medium line-clamp-1">{currentTrack.title}</p>
-              <p className="text-white/60 text-xs">{currentTrack.tags.split(',')[0]}</p>
+              <p className="text-white/90 text-sm font-medium line-clamp-1">
+                {currentTrack ? currentTrack.title : (generationPrompt || 'Your Track')}
+              </p>
+              <p className="text-white/60 text-xs">
+                {currentTrack ? currentTrack.tags.split(',')[0] : 'Generating...'}
+              </p>
             </div>
 
-            {/* Menu button */}
-            <div className="relative">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowMenu(!showMenu)}
-                className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
-              >
-                <MoreVertical className="w-5 h-5 text-white" />
-              </motion.button>
-
-              {/* Dropdown menu */}
-              {showMenu && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute right-0 mt-2 w-40 bg-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl border border-white/20 z-50"
+            {/* Menu button - only show when track is ready */}
+            {tracksReady && (
+              <div className="relative">
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowMenu(!showMenu)}
+                  className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
                 >
-                  <button
-                    onClick={handleDownload}
-                    className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition"
+                  <MoreVertical className="w-5 h-5 text-white" />
+                </motion.button>
+
+                {/* Dropdown menu */}
+                {showMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="absolute right-0 mt-2 w-40 bg-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl border border-white/20 z-50"
                   >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-                  <button
-                    onClick={handleShare}
-                    className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    Share
-                  </button>
-                </motion.div>
-              )}
-            </div>
+                    <button
+                      onClick={handleDownload}
+                      className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
+                    <button
+                      onClick={handleShare}
+                      className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Progress bar */}
@@ -284,71 +322,25 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
               max={duration || 0}
               value={currentTime}
               onChange={handleSeek}
-              className="w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-lg"
+              disabled={!tracksReady}
+              className="w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-lg disabled:opacity-50"
               style={{
-                background: `linear-gradient(to right, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.8) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.2) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.2) 100%)`
+                background: tracksReady 
+                  ? `linear-gradient(to right, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.8) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.2) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.2) 100%)`
+                  : 'rgba(255,255,255,0.2)'
               }}
             />
             <div className="flex justify-between text-white/60 text-xs mt-1">
-              <span>{formatDuration(currentTime)}</span>
-              <span>{formatDuration(duration)}</span>
+              <span>{tracksReady ? formatDuration(currentTime) : '0:00'}</span>
+              <span>{tracksReady ? formatDuration(duration) : '--:--'}</span>
             </div>
           </div>
 
-          <WaveformVisualizer isPlaying={isPlaying} />
+          <WaveformVisualizer isPlaying={tracksReady && isPlaying} />
         </FloatingCard>
 
-        {/* Track list if multiple tracks */}
-        {tracks.length > 1 && (
-          <FloatingCard delay={0.5} rotation={0} className="mb-6">
-            <h4 className="text-white/90 mb-3 flex items-center gap-2">
-              <Music2 className="w-4 h-4" />
-              All Tracks ({tracks.length})
-            </h4>
-            <div className="space-y-2">
-              {tracks.map((track, index) => (
-                <motion.button
-                  key={track.id}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    if (audioRef.current) {
-                      audioRef.current.pause();
-                    }
-                    setCurrentTrackIndex(index);
-                    setIsPlaying(false);
-                  }}
-                  className={`w-full p-3 rounded-xl transition ${
-                    index === currentTrackIndex
-                      ? 'bg-gradient-to-br from-[#FF69B4]/20 to-[#00BFFF]/20 border border-white/20'
-                      : 'bg-white/5 hover:bg-white/10'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
-                        index === currentTrackIndex && isPlaying ? 'animate-pulse' : ''
-                      }`}>
-                        {index === currentTrackIndex && isPlaying ? (
-                          <Pause className="w-5 h-5 text-white" fill="white" />
-                        ) : (
-                          <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                        )}
-                      </div>
-                      <div className="text-left">
-                        <p className="text-white/90 text-sm line-clamp-1">{track.title}</p>
-                        <p className="text-white/60 text-xs">{formatDuration(track.duration)}</p>
-                      </div>
-                    </div>
-                    <span className="text-white/40 text-xs">#{index + 1}</span>
-                  </div>
-                </motion.button>
-              ))}
-            </div>
-          </FloatingCard>
-        )}
-
         {/* Prompt/Lyrics used */}
-        {currentTrack.prompt && (
+        {currentTrack && currentTrack.prompt && (
           <FloatingCard delay={0.7} rotation={0} className="mb-6">
             <h4 className="text-white/90 mb-3 flex items-center gap-2">
               <Music2 className="w-4 h-4" />

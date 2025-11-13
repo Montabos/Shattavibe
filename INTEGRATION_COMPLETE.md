@@ -1,8 +1,8 @@
-# 🎉 ShattaVibe - Intégration Suno API + Supabase COMPLÈTE !
+# 🎉 Bangr - Intégration Suno API + Supabase COMPLÈTE !
 
 ## ✅ Résumé de l'Intégration
 
-Votre application **ShattaVibe** est maintenant **100% fonctionnelle** avec :
+Votre application **Bangr** est maintenant **100% fonctionnelle** avec :
 
 ### 🎵 API Suno AI Music
 - ✅ Client API TypeScript complet
@@ -270,7 +270,7 @@ Consultez ces fichiers pour plus de détails :
 
 ## 🙏 Prêt à Utiliser !
 
-Votre application ShattaVibe est maintenant :
+Votre application Bangr est maintenant :
 
 ✅ **Fonctionnelle** - Génère de vraie musique avec Suno AI  
 ✅ **Stockée** - Sauvegarde dans Supabase  

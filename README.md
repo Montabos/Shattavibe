@@ -1,4 +1,4 @@
-# ShattaVibe Generator Design
+# Bangr - AI Music Generator
 
 A modern music generator application built with React, TypeScript, Tailwind CSS, and Vite. This project is **fully compatible with Lovable.dev** for easy deployment and iteration.
 
@@ -16,7 +16,7 @@ This project follows Lovable's stack requirements:
 ## 📦 Project Structure
 
 ```
-ShattaVibe/
+Bangr/
 ├── src/
 │   ├── components/        # React components
 │   │   ├── ui/           # shadcn/ui components
@@ -44,7 +44,7 @@ ShattaVibe/
 1. Clone the repository:
 ```bash
 git clone <your-repo-url>
-cd Shattavibe
+cd Bangr
 ```
 
 2. Install dependencies:
@@ -125,11 +125,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is open source and available under the MIT License.
 
-## 🎵 About ShattaVibe
+## 🎵 About Bangr
 
-ShattaVibe is a music generation application that helps users create unique music experiences. The design was originally created in Figma and converted to a fully functional React application.
-
-Original Figma Design: [ShattaVibe Generator Design](https://www.figma.com/design/XDalgNdWBXbheu64PokHSY/ShattaVibe-Generator-Design)
+Bangr is an AI-powered music generation application that helps users create unique music experiences. Generate custom tracks with different styles (Gospel afro-house drill and bass, Choral afro-jazz), languages, and vocal preferences using cutting-edge AI technology.
 
 ---
 

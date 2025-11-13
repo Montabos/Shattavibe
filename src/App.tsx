@@ -8,7 +8,6 @@ import { LibraryScreen } from './components/LibraryScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { useSunoGeneration } from './hooks/useSunoGeneration';
 import { supabase } from './lib/supabase';
-import type { LanguageCode, VocalGender } from './types/suno';
 
 type Screen = 'home' | 'generator' | 'generating' | 'result' | 'profile' | 'library' | 'auth';
 
@@ -16,6 +15,7 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
+  const [lastGenerationPrompt, setLastGenerationPrompt] = useState<string>('');
   const generation = useSunoGeneration();
 
   // Check authentication status and fetch user profile
@@ -63,26 +63,18 @@ export default function App() {
     }
   };
 
-  // Automatically switch to result screen when tracks are available
-  useEffect(() => {
-    if (generation.status === 'completed' && generation.tracks && generation.tracks.length > 0) {
-      setCurrentScreen('result');
-    }
-  }, [generation.status, generation.tracks]);
-
   const handleGenerate = async (params: {
     prompt: string;
     instrumental: boolean;
-    language?: LanguageCode;
-    vocalGender?: VocalGender;
   }) => {
+    setLastGenerationPrompt(params.prompt);
     setCurrentScreen('generating');
     try {
       await generation.generate({
         ...params,
         model: 'V5', // Superior musical expression, faster generation
       });
-      // Polling will automatically switch to result screen when tracks are ready
+      // GeneratingScreen will auto-transition to result after 13 seconds
     } catch (error) {
       console.error('Generation failed:', error);
       // Stay on generating screen to show error
@@ -90,6 +82,7 @@ export default function App() {
   };
 
   const handleGeneratingComplete = () => {
+    // Transition to result screen (even if tracks aren't ready yet)
     setCurrentScreen('result');
   };
 
@@ -129,7 +122,7 @@ export default function App() {
         />
       )}
 
-      {currentScreen === 'result' && generation.tracks && (
+      {currentScreen === 'result' && (
         <ResultScreen
           onBack={() => {
             generation.reset();
@@ -144,6 +137,8 @@ export default function App() {
           onAuthClick={() => setCurrentScreen('auth')}
           tracks={generation.tracks}
           username={username}
+          generationPrompt={lastGenerationPrompt}
+          isLoading={generation.isLoading}
         />
       )}
 
