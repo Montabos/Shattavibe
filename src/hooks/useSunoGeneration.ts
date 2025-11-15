@@ -185,8 +185,11 @@ export function useSunoGeneration() {
           return true;
         }
 
-        // If completed, query for tracks using generation.id
-        if (generation.status === 'completed') {
+        // Check for tracks even if status is not completed yet (stream_audio_url might be available)
+        // This allows playback to start as soon as stream_audio_url is available (~20-30s)
+        if (generation.status === 'completed' || generation.status === 'processing') {
+          console.log(`✅ Generation status: ${generation.status}. Checking for tracks...`);
+          
           const { data: tracks, error: tracksError } = await supabase
             .from('tracks')
             .select('*')
@@ -197,7 +200,18 @@ export function useSunoGeneration() {
             return false;
           }
 
+          console.log(`🎵 Found ${tracks?.length || 0} tracks`);
           if (tracks && tracks.length > 0) {
+            console.log('📋 Track details:', tracks.map(t => ({ 
+              id: t.suno_id, 
+              duration: t.duration, 
+              stream_url: t.stream_audio_url?.substring(0, 50),
+              has_stream: !!t.stream_audio_url
+            })));
+          }
+
+          // If tracks exist with stream_audio_url, we can play them even if status is still 'processing'
+          if (tracks && tracks.length > 0 && tracks.some(t => t.stream_audio_url)) {
             // Tracks found! Update state
             const trackData = tracks as SunoMusicTrack[];
             
@@ -282,9 +296,10 @@ export function useSunoGeneration() {
           return true;
         }
 
-        // If completed, query for anonymous tracks
-        if (anonGen.status === 'completed') {
-          console.log('✅ Generation completed! Checking for tracks...');
+        // Check for tracks even if status is not completed yet (stream_audio_url might be available)
+        // This allows playback to start as soon as stream_audio_url is available (~20-30s)
+        if (anonGen.status === 'completed' || anonGen.status === 'processing') {
+          console.log(`✅ Generation status: ${anonGen.status}. Checking for tracks...`);
           
           const { data: tracks, error: tracksError } = await supabase
             .from('anonymous_tracks')
@@ -301,11 +316,13 @@ export function useSunoGeneration() {
             console.log('📋 Track details:', tracks.map(t => ({ 
               id: t.suno_id, 
               duration: t.duration, 
-              stream_url: t.stream_audio_url?.substring(0, 50) 
+              stream_url: t.stream_audio_url?.substring(0, 50),
+              has_stream: !!t.stream_audio_url
             })));
           }
 
-          if (tracks && tracks.length > 0) {
+          // If tracks exist with stream_audio_url, we can play them even if status is still 'processing'
+          if (tracks && tracks.length > 0 && tracks.some(t => t.stream_audio_url)) {
             // Tracks found! Update state and localStorage
             const trackData = tracks as SunoMusicTrack[];
             
@@ -372,10 +389,11 @@ export function useSunoGeneration() {
       console.log('🚀 Calling checkForTracks immediately');
       checkForTracks(state.taskId);
 
-      // Then poll every 5 seconds for faster detection
+      // Then poll every 2 seconds for faster detection of stream_audio_url
+      // This allows playback to start as soon as stream_audio_url is available (~20-30s)
       pollingIntervalRef.current = setInterval(() => {
         checkForTracks(state.taskId!);
-      }, 5000); // 5 seconds
+      }, 2000); // 2 seconds - faster polling to catch stream_audio_url sooner
 
       // Cleanup on unmount or when taskId changes
       return () => {

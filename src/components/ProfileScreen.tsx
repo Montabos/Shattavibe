@@ -153,22 +153,41 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
     setIsPlaying(false);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (currentTrack) {
-      const link = document.createElement('a');
-      link.href = getDownloadUrl(currentTrack);
-      link.download = `${currentTrack.title}.mp3`;
-      link.click();
+      try {
+        const { downloadAudioTrack } = await import('@/lib/audioUtils');
+        await downloadAudioTrack(currentTrack);
+      } catch (error) {
+        console.error('Download error:', error);
+      }
     }
   };
 
-  const handleShare = () => {
-    if (currentTrack && navigator.share) {
-      navigator.share({
-        title: currentTrack.title,
-        text: `Check out my track: ${currentTrack.title}`,
-        url: getDownloadUrl(currentTrack),
-      });
+  const handleShare = async () => {
+    if (currentTrack) {
+      const shareUrl = currentTrack.audio_url || currentTrack.stream_audio_url || '';
+      const shareText = `Check out my track: ${currentTrack.title}`;
+      
+      // Try Web Share API first
+      if (navigator.share && shareUrl) {
+        try {
+          await navigator.share({
+            title: currentTrack.title,
+            text: shareText,
+            url: shareUrl,
+          });
+          return;
+        } catch (error) {
+          if (error instanceof Error && error.name !== 'AbortError') {
+            console.error('Share error:', error);
+          }
+        }
+      }
+      
+      // Fallback: Copy URL to clipboard
+      const { copyTrackUrl } = await import('@/lib/audioUtils');
+      await copyTrackUrl(currentTrack);
     }
   };
 

@@ -106,10 +106,11 @@ serve(async (req) => {
 
         console.log('✅ Found in anonymous_generations - saving anonymous tracks')
 
-        // Update anonymous generation to completed
+        // Update status: 'processing' for text/first callbacks (stream_audio_url available), 'completed' for complete callback
+        const newStatus = callbackType === 'complete' ? 'completed' : 'processing'
         await supabaseClient
           .from('anonymous_generations')
-          .update({ status: 'completed' })
+          .update({ status: newStatus })
           .eq('task_id', task_id)
 
         // Upsert anonymous tracks (insert or update if exists)
@@ -153,10 +154,11 @@ serve(async (req) => {
 
       console.log(`📦 Generation ID: ${generation.id}`)
 
-      // Update generation to completed
+      // Update status: 'processing' for text/first callbacks (stream_audio_url available), 'completed' for complete callback
+      const newStatus = callbackType === 'complete' ? 'completed' : 'processing'
       const { error: updateError } = await supabaseClient
         .from('generations')
-        .update({ status: 'completed' })
+        .update({ status: newStatus })
         .eq('task_id', task_id)
 
       if (updateError) {

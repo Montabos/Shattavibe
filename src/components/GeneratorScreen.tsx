@@ -145,6 +145,7 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
 
         {/* Input area - Main prompt */}
         <FloatingCard delay={0.2} className="mb-6">
+          <h3 className="text-white/90 mb-3 text-sm font-medium">Describe Your Track</h3>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}

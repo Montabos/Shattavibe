@@ -41,10 +41,12 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
 
   const handleDownload = async () => {
     if (currentTrack) {
-      const link = document.createElement('a');
-      link.href = getDownloadUrl(currentTrack);
-      link.download = `${currentTrack.title}.mp3`;
-      link.click();
+      try {
+        const { downloadAudioTrack } = await import('@/lib/audioUtils');
+        await downloadAudioTrack(currentTrack);
+      } catch (error) {
+        console.error('Download error:', error);
+      }
     }
   };
 

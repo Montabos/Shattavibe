@@ -8,6 +8,7 @@ import { LibraryScreen } from './components/LibraryScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { useSunoGeneration } from './hooks/useSunoGeneration';
 import { supabase } from './lib/supabase';
+import { Toaster } from './components/ui/sonner';
 
 type Screen = 'home' | 'generator' | 'generating' | 'result' | 'profile' | 'library' | 'auth';
 
@@ -95,8 +96,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
-      {currentScreen === 'home' && (
+    <>
+      <Toaster />
+      <div className="min-h-screen overflow-x-hidden">
+        {currentScreen === 'home' && (
         <HomeScreen
           onGenerateClick={() => setCurrentScreen('generator')}
           onProfileClick={handleProfileClick}
@@ -156,6 +159,7 @@ export default function App() {
           onAuthSuccess={() => setCurrentScreen('home')}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }

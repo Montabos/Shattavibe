@@ -6,7 +6,8 @@ import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { GenerationService } from '@/lib/generationService';
-import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
+import { getPlaybackUrl, downloadAudioTrack, copyTrackUrl } from '@/lib/audioUtils';
+import { toast } from 'sonner';
 import type { SunoMusicTrack } from '@/types/suno';
 
 interface ResultScreenProps {
@@ -26,6 +27,7 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const sessionCount = SessionStorageService.getSessionCount();
   
@@ -90,21 +92,62 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
   };
 
   const handleDownload = async () => {
-    const link = document.createElement('a');
-    link.href = getDownloadUrl(currentTrack);
-    link.download = `${currentTrack.title}.mp3`;
-    link.click();
+    if (!currentTrack || isDownloading) return;
+    
+    setIsDownloading(true);
     setShowMenu(false);
+    
+    try {
+      await downloadAudioTrack(currentTrack);
+      toast.success('Download started!', {
+        description: `${currentTrack.title} is downloading`,
+      });
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Download failed', {
+        description: 'Unable to download the track. Please try again.',
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: currentTrack.title,
-        text: `Check out my track: ${currentTrack.title}`,
-        url: getDownloadUrl(currentTrack),
+  const handleShare = async () => {
+    if (!currentTrack) return;
+    
+    const shareUrl = currentTrack.audio_url || currentTrack.stream_audio_url || '';
+    const shareText = `Check out my track: ${currentTrack.title}`;
+    
+    // Try Web Share API first (mobile and modern browsers)
+    if (navigator.share && shareUrl) {
+      try {
+        await navigator.share({
+          title: currentTrack.title,
+          text: shareText,
+          url: shareUrl,
+        });
+        setShowMenu(false);
+        return;
+      } catch (error) {
+        // User cancelled or share failed, fall through to copy URL
+        if (error instanceof Error && error.name !== 'AbortError') {
+          console.error('Share error:', error);
+        }
+      }
+    }
+    
+    // Fallback: Copy URL to clipboard
+    const copied = await copyTrackUrl(currentTrack);
+    if (copied) {
+      toast.success('Link copied!', {
+        description: 'Track URL copied to clipboard',
+      });
+    } else {
+      toast.error('Failed to copy', {
+        description: 'Unable to copy the track URL',
       });
     }
+    
     setShowMenu(false);
   };
 
@@ -296,17 +339,27 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
                   >
                     <button
                       onClick={handleDownload}
-                      className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition"
+                      disabled={isDownloading}
+                      className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Download className="w-4 h-4" />
-                      Download
+                      {isDownloading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Downloading...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          Download
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={handleShare}
                       className="w-full px-4 py-3 text-white text-sm flex items-center gap-3 hover:bg-white/10 transition"
                     >
                       <Share2 className="w-4 h-4" />
-                      Share
+                      Share / Copy Link
                     </button>
                   </motion.div>
                 )}
