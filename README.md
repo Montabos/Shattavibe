@@ -1,134 +1,279 @@
-# Bangr - AI Music Generator
+# Shattavibe - AI Music Generator
 
-A modern music generator application built with React, TypeScript, Tailwind CSS, and Vite. This project is **fully compatible with Lovable.dev** for easy deployment and iteration.
+Shattavibe is a modern web application that generates music using AI. Users can create custom tracks by providing text prompts, choosing musical styles, and selecting vocal preferences. The application leverages the **Suno AI API** for music generation and **Supabase** for data persistence.
 
-## 🚀 Lovable Compatibility
+## What Can Users Do?
 
-This project follows Lovable's stack requirements:
-- ✅ **React 18.3.1** - Modern React with hooks
-- ✅ **Tailwind CSS 3.4.1** - Utility-first CSS framework
-- ✅ **Vite 6.3.5** - Lightning-fast build tool
-- ✅ **TypeScript** - Type-safe development
-- ✅ **shadcn/ui + Radix UI** - Accessible component library
-- ✅ **OpenAPI Ready** - Can connect to OpenAPI backends
-- 🔄 **Supabase Ready** - Ready for authentication and data persistence
+With Shattavibe, users can:
 
-## 📦 Project Structure
+- **Generate Music**: Create original music tracks from text prompts using AI
+- **Customize Style**: Choose between instrumental or vocal tracks, select genres (Gospel afro-house drill and bass, Choral afro-jazz, Afrobeat, Drill, Trap, Dancehall, Hip-hop, R&B), and specify vocal gender preferences
+- **Listen Instantly**: Start listening to tracks as soon as the streaming URL is available (~20-30 seconds) using Suno's streaming feature
+- **Manage Library**: Save and organize generated tracks in a personal library
+- **Share & Download**: Download tracks as MP3 files or share them with others via the Web Share API or by copying links
+- **Use Anonymously or Authenticated**: Works for both anonymous users (with localStorage) and authenticated users (with Supabase persistence)
 
-```
-Bangr/
-├── src/
-│   ├── components/        # React components
-│   │   ├── ui/           # shadcn/ui components
-│   │   ├── HomeScreen.tsx
-│   │   ├── GeneratorScreen.tsx
-│   │   ├── GeneratingScreen.tsx
-│   │   ├── ResultScreen.tsx
-│   │   └── ProfileScreen.tsx
-│   ├── App.tsx           # Main application
-│   ├── main.tsx          # Entry point
-│   └── index.css         # Global styles
-├── tailwind.config.ts    # Tailwind configuration
-├── tsconfig.json         # TypeScript configuration
-├── vite.config.ts        # Vite configuration
-└── package.json          # Dependencies
-```
+## Technologies & Services
 
-## 🛠️ Getting Started
+### Suno AI API
+
+**Suno AI** is the core music generation service that powers Shattavibe:
+
+- **What it does**: Generates high-quality music tracks from text prompts using advanced AI models
+- **Models available**: V3.5, V4, V4.5, V4.5+, and V5 (default)
+- **Generation process**: 
+  - Submits generation request with a callback URL
+  - Generates music in the background (typically 30-60 seconds)
+  - Sends multiple callbacks: `text` (~20s with streaming URL), `first` (~30-40s), and `complete` (~2-3 min with full quality)
+- **Streaming feature**: Provides `stream_audio_url` for immediate playback (~20-30s) and `audio_url` for full quality download (~2-3 min)
+- **API Key required**: You need a valid Suno API key from [Suno API](https://sunoapi.org) to use the service
+
+### Supabase
+
+**Supabase** is used for backend services and data persistence:
+
+- **What it does**: Provides PostgreSQL database, authentication, and Edge Functions
+- **Database**: Stores user profiles, generation history, and track metadata
+- **Edge Functions**: Handles Suno API callbacks (receives completion notifications from Suno)
+- **Authentication**: Optional user authentication system
+- **Row Level Security (RLS)**: Ensures users can only access their own data
+- **Free tier**: 500K Edge Function requests/month (sufficient for most use cases)
+
+### Architecture Overview
+
+The application uses a **callback-based architecture**:
+
+1. User submits a generation request → App sends request to Suno API with callback URL
+2. Suno API generates music → Sends callback to Supabase Edge Function when ready
+3. Edge Function saves tracks → Updates database with track metadata and URLs
+4. App polls database → Detects new tracks and displays them to the user
+5. User can play immediately → Uses `stream_audio_url` for fast playback
+
+## Installation & Local Development
 
 ### Prerequisites
-- Node.js 18+ or npm/pnpm/yarn
 
-### Installation
+- **Node.js** 18+ and npm (or pnpm/yarn)
+- **Suno API Key** - Get one from [Suno API](https://sunoapi.org)
+- **Supabase Account** (optional, for full functionality) - Create a free account at [Supabase](https://supabase.com)
 
-1. Clone the repository:
+### Step 1: Clone the Repository
+
 ```bash
 git clone <your-repo-url>
-cd Bangr
+cd "Shattavibe - Copie"
 ```
 
-2. Install dependencies:
+### Step 2: Install Dependencies
+
 ```bash
 npm install
-# or
-pnpm install
-# or
-yarn install
 ```
 
-3. Run the development server:
+### Step 3: Configure Environment Variables
+
+Create a `.env` file in the root directory:
+
+```env
+# Required: Suno API Configuration
+# Get your API key from https://sunoapi.org
+VITE_SUNO_API_KEY=your_suno_api_key_here
+
+# Optional: Supabase Configuration (for authenticated features)
+# Get these from your Supabase project settings
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+**Important**: 
+- Replace `your_suno_api_key_here` with your actual Suno API key
+- The Suno API key is **required** for the application to work
+- Without it, music generation will fail
+- You can get a key by signing up at [Suno API](https://sunoapi.org)
+
+### Step 4: Set Up Supabase Database (Optional)
+
+If you want to use authenticated features and proper data persistence:
+
+1. Create a new project on [Supabase](https://supabase.com)
+2. Go to **SQL Editor** in your Supabase dashboard
+3. Copy and execute the SQL schema from `supabase/schema.sql`
+4. This creates the necessary tables: `user_profiles`, `generations`, `tracks`, and `anonymous_generations`
+
+### Step 5: Deploy Supabase Edge Function (Optional but Recommended)
+
+For callback handling from Suno API (allows faster track detection):
+
+1. Install Supabase CLI:
+   ```bash
+   npm install -g supabase
+   ```
+
+2. Login and link your project:
+   ```bash
+   supabase login
+   supabase link --project-ref YOUR_PROJECT_ID
+   ```
+
+3. Deploy the callback function:
+   ```bash
+   supabase functions deploy suno-callback
+   ```
+
+4. Set required secrets:
+   ```bash
+   supabase secrets set SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
+   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
+
+   The `service_role_key` can be found in: **Settings** > **API** > **Service role (secret)**
+
+### Step 6: Run the Development Server
+
 ```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+The application will be available at `http://localhost:3000`.
 
-## 📜 Available Scripts
+### Available Scripts
 
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
-- `npm run lint` - Lint code with ESLint
+- `npm run lint` - Run ESLint
 
-## 🎨 Tech Stack
+## Technical Choices
 
-### Core
-- **React 18.3** - UI library
-- **TypeScript** - Type safety
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
+### Frontend Stack
+
+- **React 18.3.1** - Modern React with hooks for UI components
+- **TypeScript 5.3.3** - Type safety and better developer experience
+- **Vite 6.3.5** - Fast build tool and development server
+- **Tailwind CSS 3.4.1** - Utility-first CSS framework for styling
 
 ### UI Components
-- **shadcn/ui** - Re-usable components
-- **Radix UI** - Accessible primitives
-- **Lucide React** - Icons
-- **Framer Motion** - Animations
 
-### Forms & State
-- **React Hook Form** - Form management
-- **next-themes** - Theme switching
+- **shadcn/ui** - Accessible, customizable component library
+- **Radix UI** - Unstyled, accessible UI primitives
+- **Lucide React** - Icon library
+- **Framer Motion** - Animation library for smooth transitions
 
-### Utilities
-- **class-variance-authority** - Component variants
-- **clsx** + **tailwind-merge** - Class merging
-- **sonner** - Toast notifications
+### Backend & Services
 
-## 🌐 Deploying to Lovable
+- **Suno API** - AI music generation service
+  - Simple mode generation with customizable prompts
+  - Support for multiple models (V3.5, V4, V4.5, V4.5+, V5)
+  - Callback-based architecture (no polling)
+  - Streaming URLs for fast playback
 
-1. Push your code to GitHub/GitLab
-2. Go to [Lovable.dev](https://lovable.dev)
-3. Import your repository
-4. Lovable will automatically detect the configuration
-5. Deploy! 🚀
+- **Supabase** - Backend-as-a-Service
+  - PostgreSQL database for data persistence
+  - Row Level Security (RLS) for data access control
+  - Edge Functions for handling Suno API callbacks
+  - Optional authentication system
 
-## 🔧 Adding Supabase (Optional)
+### Architecture Decisions
 
-To add authentication and database:
+1. **Callback-Based Generation**: Suno API uses HTTP callbacks instead of polling, requiring a backend endpoint (Supabase Edge Function) to receive completion notifications.
 
-1. Create a Supabase project at [supabase.com](https://supabase.com)
-2. Copy your project URL and anon key
-3. Create a `.env` file:
-```env
-VITE_SUPABASE_URL=your_project_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
+2. **Dual Storage Strategy**: 
+   - Authenticated users: Data stored in Supabase
+   - Anonymous users: Data stored in localStorage with fallback to `anonymous_generations` table
+
+3. **Type Safety**: Full TypeScript coverage with generated types from Supabase schema
+
+4. **Component Architecture**: Modular screen-based components (HomeScreen, GeneratorScreen, ResultScreen, etc.) for clear separation of concerns
+
+5. **Streaming-First Playback**: Prioritizes `stream_audio_url` for immediate playback (~20-30s) over full quality `audio_url` (~2-3 min)
+
+## Limitations
+
+### API Limitations
+
+- **Suno API**:
+  - Simple mode prompts limited to 500 characters
+  - Generation time: Typically 30-60 seconds, can take up to 20 minutes
+  - Requires valid API key with sufficient credits
+  - Callback-based architecture requires a publicly accessible endpoint (Supabase Edge Function or similar)
+  - Streaming URL available in ~20-30 seconds, full quality URL in ~2-3 minutes
+
+- **Model-Specific Limits**:
+  - V3.5, V4: Maximum 4-minute tracks
+  - V4.5, V4.5+: Maximum 8-minute tracks
+  - V5: No specific duration limit
+
+### Application Limitations
+
+- **Anonymous Users**: 
+  - Data stored in localStorage (limited by browser storage)
+  - No cross-device synchronization
+  - Data can be lost if browser storage is cleared
+
+- **Supabase Edge Functions**:
+  - Free tier: 500K requests/month
+  - Cold start latency for first request
+  - Requires proper CORS configuration
+
+- **Browser Compatibility**:
+  - Requires modern browser with ES2020+ support
+  - Audio playback depends on browser codec support
+  - Web Share API only available on mobile and some desktop browsers
+
+### Development Limitations
+
+- **Local Development**: 
+  - Callback testing requires a public URL (use ngrok or webhook.site for testing)
+  - Supabase Edge Functions must be deployed to test callback flow
+
+- **Environment Variables**: 
+  - Must be prefixed with `VITE_` to be accessible in the browser
+  - Sensitive keys should never be committed to version control
+  - Suno API key is required for the application to function
+
+## Project Structure
+
 ```
-4. Install Supabase client:
-```bash
-npm install @supabase/supabase-js
+Shattavibe - Copie/
+├── src/
+│   ├── components/          # React components
+│   │   ├── ui/             # shadcn/ui components
+│   │   ├── HomeScreen.tsx
+│   │   ├── GeneratorScreen.tsx
+│   │   ├── GeneratingScreen.tsx
+│   │   ├── ResultScreen.tsx
+│   │   └── ...
+│   ├── config/             # Configuration files
+│   │   └── suno.ts         # Suno API configuration
+│   ├── hooks/              # Custom React hooks
+│   │   └── useSunoGeneration.ts
+│   ├── lib/                # Utility libraries
+│   │   ├── sunoApi.ts      # Suno API client
+│   │   ├── supabase.ts     # Supabase client
+│   │   ├── generationService.ts
+│   │   ├── audioUtils.ts   # Audio download/share utilities
+│   │   └── ...
+│   ├── types/              # TypeScript type definitions
+│   │   ├── suno.ts
+│   │   └── database.ts
+│   └── App.tsx             # Main application component
+├── supabase/
+│   ├── functions/          # Supabase Edge Functions
+│   │   └── suno-callback/  # Callback handler
+│   ├── migrations/         # Database migrations
+│   └── schema.sql          # Database schema
+├── .env                    # Environment variables (not committed)
+└── package.json
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📄 License
+## License
 
 This project is open source and available under the MIT License.
 
-## 🎵 About Bangr
-
-Bangr is an AI-powered music generation application that helps users create unique music experiences. Generate custom tracks with different styles (Gospel afro-house drill and bass, Choral afro-jazz), languages, and vocal preferences using cutting-edge AI technology.
-
 ---
 
-Made with ❤️ and ready for [Lovable.dev](https://lovable.dev)
+Made with ❤️ using React, TypeScript, and AI-powered music generation.

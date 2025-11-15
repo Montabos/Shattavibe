@@ -58,20 +58,36 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
     }
   }, [tracksReady, currentTrack]);
 
-  // Update current time
+  // Update current time and duration
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !currentTrack) return;
 
     const updateTime = () => setCurrentTime(audio.currentTime);
-    const updateDuration = () => setDuration(audio.duration);
+    const updateDuration = () => {
+      // Use audio.duration if valid, otherwise fallback to track.duration from API
+      const audioDuration = audio.duration;
+      if (audioDuration && isFinite(audioDuration) && audioDuration > 0) {
+        setDuration(audioDuration);
+      } else if (currentTrack.duration && currentTrack.duration > 0) {
+        // Fallback to track duration from Suno API
+        setDuration(currentTrack.duration);
+      }
+    };
+
+    // Set initial duration from track if available
+    if (currentTrack.duration && currentTrack.duration > 0) {
+      setDuration(currentTrack.duration);
+    }
 
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('durationchange', updateDuration);
 
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('durationchange', updateDuration);
     };
   }, [currentTrack]);
 
@@ -160,7 +176,10 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
   };
 
   const formatDuration = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return '0:00';
+    // Handle invalid values
+    if (!seconds || isNaN(seconds) || !isFinite(seconds) || seconds < 0) {
+      return '0:00';
+    }
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -385,7 +404,11 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
             />
             <div className="flex justify-between text-white/60 text-xs mt-1">
               <span>{tracksReady ? formatDuration(currentTime) : '0:00'}</span>
-              <span>{tracksReady ? formatDuration(duration) : '--:--'}</span>
+              <span>
+                {tracksReady 
+                  ? (duration > 0 ? formatDuration(duration) : (currentTrack?.duration ? formatDuration(currentTrack.duration) : '--:--'))
+                  : '--:--'}
+              </span>
             </div>
           </div>
 
