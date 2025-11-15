@@ -1,10 +1,10 @@
 import { motion } from 'motion/react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Play, Pause, Download, Music2, Library } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService, type SessionGeneration } from '@/lib/sessionStorageService';
-import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
+import { getPlaybackUrl, getDownloadUrl, isTrackPlayable } from '@/lib/audioUtils';
 
 interface LibraryScreenProps {
   onBack: () => void;
@@ -23,19 +23,63 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
 
   const currentTrack = selectedGeneration?.tracks[currentTrackIndex];
 
+  // Update audio source when track changes
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentTrack) return;
+
+    // Stop current playback
+    audio.pause();
+    audio.currentTime = 0;
+    setIsPlaying(false);
+
+    // Load new source
+    const playbackUrl = getPlaybackUrl(currentTrack);
+    if (playbackUrl && isTrackPlayable(currentTrack)) {
+      audio.src = playbackUrl;
+      audio.load(); // Force reload of the audio element
+    } else {
+      console.warn('Track not playable:', currentTrack);
+    }
+  }, [currentTrack]);
+
   const handlePlayPause = async () => {
-    if (audioRef.current) {
-      try {
-        if (isPlaying) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-        } else {
-          await audioRef.current.play();
-          setIsPlaying(true);
+    const audio = audioRef.current;
+    if (!audio || !currentTrack) return;
+
+    // Check if track is playable
+    if (!isTrackPlayable(currentTrack)) {
+      console.error('Track is not playable - missing audio URL');
+      return;
+    }
+
+    try {
+      if (isPlaying) {
+        audio.pause();
+        // setIsPlaying will be set by onPause event
+      } else {
+        // Ensure audio is loaded
+        if (!audio.src || audio.readyState === 0) {
+          const playbackUrl = getPlaybackUrl(currentTrack);
+          if (playbackUrl) {
+            audio.src = playbackUrl;
+            await audio.load();
+          }
         }
-      } catch (error) {
+        
+        // Play with error handling
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          // setIsPlaying will be set by onPlay event
+        }
+      }
+    } catch (error) {
+      // Handle AbortError gracefully (user interaction interrupted)
+      if (error instanceof Error && error.name !== 'AbortError') {
         console.error('Error playing audio:', error);
       }
+      setIsPlaying(false);
     }
   };
 
@@ -132,8 +176,11 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                     onClick={() => {
-                      if (audioRef.current) {
-                        audioRef.current.pause();
+                      const audio = audioRef.current;
+                      if (audio) {
+                        // Stop playback gracefully
+                        audio.pause();
+                        audio.currentTime = 0;
                       }
                       setSelectedGeneration(gen);
                       setCurrentTrackIndex(0);
@@ -188,13 +235,29 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                   </div>
 
                   {/* Hidden audio element */}
-                  <audio
-                    ref={audioRef}
-                    src={getPlaybackUrl(currentTrack)}
-                    onEnded={() => setIsPlaying(false)}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                  />
+                  {currentTrack && isTrackPlayable(currentTrack) && (
+                    <audio
+                      ref={audioRef}
+                      key={currentTrack.id} // Force re-render when track changes
+                      preload="metadata"
+                      onEnded={() => setIsPlaying(false)}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onError={(e) => {
+                        console.error('Audio error:', e);
+                        setIsPlaying(false);
+                        // Try to reload if error occurs
+                        const audio = audioRef.current;
+                        if (audio) {
+                          const playbackUrl = getPlaybackUrl(currentTrack);
+                          if (playbackUrl && audio.src !== playbackUrl) {
+                            audio.src = playbackUrl;
+                            audio.load();
+                          }
+                        }
+                      }}
+                    />
+                  )}
 
                   {/* Waveform */}
                   <WaveformVisualizer isPlaying={isPlaying} />
@@ -220,8 +283,11 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                         <button
                           key={index}
                           onClick={() => {
-                            if (audioRef.current) {
-                              audioRef.current.pause();
+                            const audio = audioRef.current;
+                            if (audio) {
+                              // Stop playback gracefully
+                              audio.pause();
+                              audio.currentTime = 0;
                             }
                             setCurrentTrackIndex(index);
                             setIsPlaying(false);
