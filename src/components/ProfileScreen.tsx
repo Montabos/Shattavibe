@@ -107,33 +107,76 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
     setExpandedGenId(expandedGenId === genId ? null : genId);
   };
 
-  const handlePlayTrack = (track: SunoMusicTrack) => {
+  const handlePlayTrack = async (track: SunoMusicTrack) => {
     if (currentTrack?.id === track.id) {
       // Toggle play/pause for current track
       handlePlayPause();
     } else {
+      // Stop current playback if any
+      const audio = audioRef.current;
+      if (audio && !audio.paused) {
+        try {
+          audio.pause();
+        } catch (error) {
+          // Ignore errors
+        }
+      }
+      
       // Load and play new track
       setCurrentTrack(track);
       setIsPlaying(true);
-      setTimeout(() => {
-        audioRef.current?.play();
-      }, 100);
+      
+      // Wait a bit for the audio element to update, then play
+      setTimeout(async () => {
+        const audio = audioRef.current;
+        if (audio) {
+          try {
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              await playPromise;
+            }
+          } catch (error) {
+            // AbortError is normal - ignore it
+            if (error instanceof Error && error.name !== 'AbortError') {
+              console.error('Error playing track:', error);
+              setIsPlaying(false);
+            }
+          }
+        }
+      }, 150);
     }
   };
 
   const handlePlayPause = async () => {
-    if (audioRef.current) {
-      try {
-        if (isPlaying) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-        } else {
-          await audioRef.current.play();
-          setIsPlaying(true);
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    try {
+      if (isPlaying) {
+        audio.pause();
+        // setIsPlaying will be set by onPause event
+      } else {
+        // Play with proper promise handling
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          // setIsPlaying will be set by onPlay event
         }
-      } catch (error) {
+      }
+    } catch (error) {
+      // AbortError is normal when play() is interrupted - ignore it
+      if (error instanceof Error && error.name === 'AbortError') {
+        // This is expected behavior, do nothing
+        return;
+      }
+      
+      // Log other errors
+      if (error instanceof Error) {
+        console.error('Error playing audio:', error.name, error.message);
+      } else {
         console.error('Error playing audio:', error);
       }
+      setIsPlaying(false);
     }
   };
 

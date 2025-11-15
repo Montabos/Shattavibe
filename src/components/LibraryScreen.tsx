@@ -19,19 +19,51 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
   );
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
+  const isChangingTrackRef = useRef(false);
 
   const currentTrack = selectedGeneration?.tracks[currentTrackIndex];
+
+  // Load session generations on mount
+  useEffect(() => {
+    // Simulate async loading to show loading state
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Update audio source when track changes
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
 
-    // Stop current playback
-    audio.pause();
-    audio.currentTime = 0;
-    setIsPlaying(false);
+    isChangingTrackRef.current = true;
+
+    // Cancel any pending play() promise
+    if (playPromiseRef.current) {
+      playPromiseRef.current.catch(() => {
+        // Ignore errors when canceling
+      });
+      playPromiseRef.current = null;
+    }
+
+    // Stop current playback gracefully
+    const stopPlayback = async () => {
+      try {
+        if (!audio.paused) {
+          audio.pause();
+        }
+        audio.currentTime = 0;
+        setIsPlaying(false);
+      } catch (error) {
+        // Ignore errors when stopping
+      }
+    };
+
+    stopPlayback();
 
     // Load new source
     const playbackUrl = getPlaybackUrl(currentTrack);
@@ -41,11 +73,16 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
     } else {
       console.warn('Track not playable:', currentTrack);
     }
+
+    // Reset flag after a short delay
+    setTimeout(() => {
+      isChangingTrackRef.current = false;
+    }, 100);
   }, [currentTrack]);
 
   const handlePlayPause = async () => {
     const audio = audioRef.current;
-    if (!audio || !currentTrack) return;
+    if (!audio || !currentTrack || isChangingTrackRef.current) return;
 
     // Check if track is playable
     if (!isTrackPlayable(currentTrack)) {
@@ -55,6 +92,13 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
 
     try {
       if (isPlaying) {
+        // Cancel any pending play() promise
+        if (playPromiseRef.current) {
+          playPromiseRef.current.catch(() => {
+            // Ignore AbortError when canceling
+          });
+          playPromiseRef.current = null;
+        }
         audio.pause();
         // setIsPlaying will be set by onPause event
       } else {
@@ -67,16 +111,27 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
           }
         }
         
-        // Play with error handling
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          await playPromise;
+        // Play with proper promise handling
+        playPromiseRef.current = audio.play();
+        if (playPromiseRef.current !== undefined) {
+          await playPromiseRef.current;
+          playPromiseRef.current = null;
           // setIsPlaying will be set by onPlay event
         }
       }
     } catch (error) {
-      // Handle AbortError gracefully (user interaction interrupted)
-      if (error instanceof Error && error.name !== 'AbortError') {
+      playPromiseRef.current = null;
+      
+      // AbortError is normal when play() is interrupted - ignore it
+      if (error instanceof Error && error.name === 'AbortError') {
+        // This is expected behavior, do nothing
+        return;
+      }
+      
+      // Log other errors
+      if (error instanceof Error) {
+        console.error('Error playing audio:', error.name, error.message);
+      } else {
         console.error('Error playing audio:', error);
       }
       setIsPlaying(false);
@@ -148,7 +203,20 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
           <div className="w-10" /> {/* Spacer for centering */}
         </div>
 
-        {sessionGenerations.length === 0 ? (
+        {isLoading ? (
+          // Loading state
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-20"
+          >
+            <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+            <h2 className="text-2xl text-white/80 mb-2">Chargement...</h2>
+            <p className="text-white/60">
+              Récupération de votre bibliothèque
+            </p>
+          </motion.div>
+        ) : sessionGenerations.length === 0 ? (
           // Empty state
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -175,12 +243,23 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    onClick={() => {
+                    onClick={async () => {
                       const audio = audioRef.current;
                       if (audio) {
+                        // Cancel any pending play() promise
+                        if (playPromiseRef.current) {
+                          playPromiseRef.current.catch(() => {
+                            // Ignore errors when canceling
+                          });
+                          playPromiseRef.current = null;
+                        }
                         // Stop playback gracefully
-                        audio.pause();
-                        audio.currentTime = 0;
+                        try {
+                          audio.pause();
+                          audio.currentTime = 0;
+                        } catch (error) {
+                          // Ignore errors
+                        }
                       }
                       setSelectedGeneration(gen);
                       setCurrentTrackIndex(0);
@@ -282,12 +361,23 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                       {selectedGeneration.tracks.map((_, index) => (
                         <button
                           key={index}
-                          onClick={() => {
+                          onClick={async () => {
                             const audio = audioRef.current;
                             if (audio) {
+                              // Cancel any pending play() promise
+                              if (playPromiseRef.current) {
+                                playPromiseRef.current.catch(() => {
+                                  // Ignore errors when canceling
+                                });
+                                playPromiseRef.current = null;
+                              }
                               // Stop playback gracefully
-                              audio.pause();
-                              audio.currentTime = 0;
+                              try {
+                                audio.pause();
+                                audio.currentTime = 0;
+                              } catch (error) {
+                                // Ignore errors
+                              }
                             }
                             setCurrentTrackIndex(index);
                             setIsPlaying(false);

@@ -92,18 +92,35 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
   }, [currentTrack]);
 
   const handlePlayPause = async () => {
-    if (audioRef.current) {
-      try {
-        if (isPlaying) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-        } else {
-          await audioRef.current.play();
-          setIsPlaying(true);
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    try {
+      if (isPlaying) {
+        audio.pause();
+        // setIsPlaying will be set by onPause event
+      } else {
+        // Play with proper promise handling
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          // setIsPlaying will be set by onPlay event
         }
-      } catch (error) {
+      }
+    } catch (error) {
+      // AbortError is normal when play() is interrupted - ignore it
+      if (error instanceof Error && error.name === 'AbortError') {
+        // This is expected behavior, do nothing
+        return;
+      }
+      
+      // Log other errors
+      if (error instanceof Error) {
+        console.error('Error playing audio:', error.name, error.message);
+      } else {
         console.error('Error playing audio:', error);
       }
+      setIsPlaying(false);
     }
   };
 
