@@ -4,7 +4,7 @@ import { FloatingCard } from './FloatingCard';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { GenerationService } from '@/lib/generationService';
-import { getPlaybackUrl, getDownloadUrl } from '@/lib/audioUtils';
+import { getPlaybackUrl, getDownloadUrl, isTrackPlayable } from '@/lib/audioUtils';
 import type { SunoMusicTrack } from '@/types/suno';
 
 interface ProfileScreenProps {
@@ -86,20 +86,85 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
     }
   };
 
+  // Update audio source and reset player when track changes
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentTrack) return;
+
+    // Stop current playback and reset
+    try {
+      if (!audio.paused) {
+        audio.pause();
+      }
+      audio.currentTime = 0;
+      setIsPlaying(false);
+    } catch {
+      // Ignore errors
+    }
+
+    // Load new source with validation
+    const playbackUrl = getPlaybackUrl(currentTrack);
+    if (playbackUrl && playbackUrl.trim() !== '' && isTrackPlayable(currentTrack)) {
+      // Only update if URL is different
+      if (audio.src !== playbackUrl) {
+        audio.src = playbackUrl;
+        try {
+          audio.load();
+        } catch {
+          // Some browsers don't need explicit load; ignore errors here
+        }
+        // Auto-play the newly selected track so a single click on the list starts playback
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((error) => {
+            if (error instanceof Error && error.name !== 'AbortError') {
+              console.error('Error auto-playing track in ProfileScreen:', error);
+            }
+          });
+        }
+      }
+    } else {
+      console.warn('Track not playable or invalid URL:', {
+        track: currentTrack.title,
+        streamUrl: currentTrack.stream_audio_url,
+        audioUrl: currentTrack.audio_url,
+        playbackUrl,
+      });
+      // Clear src if invalid
+      audio.src = '';
+    }
+  }, [currentTrack]);
+
   // Update current time
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const updateTime = () => setCurrentTime(audio.currentTime);
-    const updateDuration = () => setDuration(audio.duration);
+    const updateDuration = () => {
+      // Use audio.duration if valid, otherwise fallback to track.duration from API
+      const audioDuration = audio.duration;
+      if (audioDuration && isFinite(audioDuration) && audioDuration > 0) {
+        setDuration(audioDuration);
+      } else if (currentTrack?.duration && currentTrack.duration > 0) {
+        // Fallback to track duration from Suno API
+        setDuration(currentTrack.duration);
+      }
+    };
+
+    // Set initial duration from track if available
+    if (currentTrack?.duration && currentTrack.duration > 0) {
+      setDuration(currentTrack.duration);
+    }
 
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('durationchange', updateDuration);
 
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('durationchange', updateDuration);
     };
   }, [currentTrack]);
 
@@ -111,51 +176,73 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
     if (currentTrack?.id === track.id) {
       // Toggle play/pause for current track
       handlePlayPause();
-    } else {
-      // Stop current playback if any
-      const audio = audioRef.current;
-      if (audio && !audio.paused) {
-        try {
-          audio.pause();
-        } catch (error) {
-          // Ignore errors
-        }
-      }
-      
-      // Load and play new track
-      setCurrentTrack(track);
-      setIsPlaying(true);
-      
-      // Wait a bit for the audio element to update, then play
-      setTimeout(async () => {
-        const audio = audioRef.current;
-        if (audio) {
-          try {
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-              await playPromise;
-            }
-          } catch (error) {
-            // AbortError is normal - ignore it
-            if (error instanceof Error && error.name !== 'AbortError') {
-              console.error('Error playing track:', error);
-              setIsPlaying(false);
-            }
-          }
-        }
-      }, 150);
+      return;
     }
+
+    // Check if track is playable
+    if (!isTrackPlayable(track)) {
+      console.error('Track is not playable - missing audio URL');
+      return;
+    }
+
+    const audio = audioRef.current;
+    // Stop current playback and reset if an audio element already exists
+    if (audio) {
+      try {
+        if (!audio.paused) {
+          audio.pause();
+        }
+        audio.currentTime = 0;
+        setIsPlaying(false);
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    // Set the current track; useEffect will update the audio source
+    // and the fixed bottom player will appear
+    setCurrentTrack(track);
   };
 
   const handlePlayPause = async () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !currentTrack) return;
+
+    // Check if track is playable
+    if (!isTrackPlayable(currentTrack)) {
+      console.error('Track is not playable - missing audio URL');
+      return;
+    }
+
+    // Verify audio has a valid source
+    const playbackUrl = getPlaybackUrl(currentTrack);
+    if (!playbackUrl || playbackUrl.trim() === '') {
+      console.error('No valid playback URL available');
+      return;
+    }
+
+    // Ensure source is set
+    if (!audio.src || audio.src !== playbackUrl) {
+      audio.src = playbackUrl;
+      try {
+        await audio.load();
+      } catch (loadError) {
+        console.error('Error loading audio:', loadError);
+        return;
+      }
+    }
 
     try {
       if (isPlaying) {
         audio.pause();
         // setIsPlaying will be set by onPause event
       } else {
+        // Verify audio has a valid source before playing
+        if (!audio.src || audio.src === '' || audio.src === window.location.href) {
+          console.error('Audio element has no valid source');
+          return;
+        }
+
         // Play with proper promise handling
         const playPromise = audio.play();
         if (playPromise !== undefined) {
@@ -169,7 +256,19 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
         // This is expected behavior, do nothing
         return;
       }
-      
+
+      // NotSupportedError means no valid source - handle gracefully
+      if (error instanceof Error && error.name === 'NotSupportedError') {
+        console.error('Audio format not supported or no valid source:', {
+          track: currentTrack.title,
+          streamUrl: currentTrack.stream_audio_url,
+          audioUrl: currentTrack.audio_url,
+          audioSrc: audio.src,
+        });
+        setIsPlaying(false);
+        return;
+      }
+
       // Log other errors
       if (error instanceof Error) {
         console.error('Error playing audio:', error.name, error.message);
@@ -492,15 +591,35 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
       </div>
 
       {/* Hidden audio element */}
-      {currentTrack && (
-        <audio
-          ref={audioRef}
-          src={getPlaybackUrl(currentTrack)}
-          onEnded={() => setIsPlaying(false)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-        />
-      )}
+      {currentTrack && isTrackPlayable(currentTrack) && (() => {
+        const playbackUrl = getPlaybackUrl(currentTrack);
+        if (!playbackUrl || playbackUrl.trim() === '') {
+          return null;
+        }
+        return (
+          <audio
+            ref={audioRef}
+            key={currentTrack.id}
+            src={playbackUrl}
+            preload="metadata"
+            onEnded={() => setIsPlaying(false)}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onError={(e) => {
+              const audio = e.currentTarget;
+              console.error('Audio error:', {
+                error: e,
+                src: audio.src,
+                networkState: audio.networkState,
+                readyState: audio.readyState,
+                errorCode: audio.error?.code,
+                errorMessage: audio.error?.message,
+              });
+              setIsPlaying(false);
+            }}
+          />
+        );
+      })()}
 
       {/* Fixed bottom music player */}
       {currentTrack && (

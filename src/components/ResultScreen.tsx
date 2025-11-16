@@ -6,7 +6,7 @@ import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { GenerationService } from '@/lib/generationService';
-import { getPlaybackUrl, downloadAudioTrack, copyTrackUrl } from '@/lib/audioUtils';
+import { getPlaybackUrl, downloadAudioTrack, copyTrackUrl, isTrackPlayable } from '@/lib/audioUtils';
 import { toast } from 'sonner';
 import type { SunoMusicTrack } from '@/types/suno';
 
@@ -93,13 +93,43 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
 
   const handlePlayPause = async () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !currentTrack) return;
+
+    // Check if track is playable
+    if (!isTrackPlayable(currentTrack)) {
+      console.error('Track is not playable - missing audio URL');
+      return;
+    }
+
+    // Verify audio has a valid source
+    const playbackUrl = getPlaybackUrl(currentTrack);
+    if (!playbackUrl || playbackUrl.trim() === '') {
+      console.error('No valid playback URL available');
+      return;
+    }
+
+    // Ensure source is set
+    if (!audio.src || audio.src !== playbackUrl) {
+      audio.src = playbackUrl;
+      try {
+        await audio.load();
+      } catch (loadError) {
+        console.error('Error loading audio:', loadError);
+        return;
+      }
+    }
 
     try {
       if (isPlaying) {
         audio.pause();
         // setIsPlaying will be set by onPause event
       } else {
+        // Verify audio has a valid source before playing
+        if (!audio.src || audio.src === '' || audio.src === window.location.href) {
+          console.error('Audio element has no valid source');
+          return;
+        }
+
         // Play with proper promise handling
         const playPromise = audio.play();
         if (playPromise !== undefined) {
@@ -111,6 +141,18 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
       // AbortError is normal when play() is interrupted - ignore it
       if (error instanceof Error && error.name === 'AbortError') {
         // This is expected behavior, do nothing
+        return;
+      }
+      
+      // NotSupportedError means no valid source - handle gracefully
+      if (error instanceof Error && error.name === 'NotSupportedError') {
+        console.error('Audio format not supported or no valid source:', {
+          track: currentTrack.title,
+          streamUrl: currentTrack.stream_audio_url,
+          audioUrl: currentTrack.audio_url,
+          audioSrc: audio.src
+        });
+        setIsPlaying(false);
         return;
       }
       
@@ -312,15 +354,47 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
         </motion.div>
 
         {/* Hidden audio element */}
-        {currentTrack && (
-          <audio
-            ref={audioRef}
-            src={getPlaybackUrl(currentTrack)}
-            onEnded={() => setIsPlaying(false)}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-          />
-        )}
+        {currentTrack && isTrackPlayable(currentTrack) && (() => {
+          const playbackUrl = getPlaybackUrl(currentTrack);
+          if (!playbackUrl || playbackUrl.trim() === '') {
+            return null;
+          }
+          return (
+            <audio
+              ref={audioRef}
+              key={currentTrack.id}
+              src={playbackUrl}
+              preload="metadata"
+              onEnded={() => setIsPlaying(false)}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={(e) => {
+                const audio = e.currentTarget;
+                console.error('Audio error:', {
+                  error: e,
+                  src: audio.src,
+                  networkState: audio.networkState,
+                  readyState: audio.readyState,
+                  errorCode: audio.error?.code,
+                  errorMessage: audio.error?.message
+                });
+                setIsPlaying(false);
+                
+                // Try fallback URL if available
+                if (currentTrack) {
+                  const currentUrl = getPlaybackUrl(currentTrack);
+                  const fallbackUrl = currentTrack.audio_url || currentTrack.stream_audio_url;
+                  
+                  if (fallbackUrl && fallbackUrl !== currentUrl && audio.src !== fallbackUrl) {
+                    console.log('Trying fallback URL:', fallbackUrl);
+                    audio.src = fallbackUrl;
+                    audio.load();
+                  }
+                }
+              }}
+            />
+          );
+        })()}
 
         {/* Audio player card */}
         <FloatingCard delay={0.4} rotation={0} className="mb-6">

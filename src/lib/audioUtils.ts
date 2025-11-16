@@ -1,18 +1,29 @@
 import { SunoMusicTrack } from '../types/suno';
 
 /**
- * Gets the best audio URL for playback
- * Prioritizes stream_audio_url (available in 30-40s) over audio_url (available in 2-3 min)
- * Falls back to audio_url if stream is not available
+ * Gets the best audio URL for playback.
+ *
+ * IMPORTANT:
+ * - Some browsers fail to play `stream_audio_url` directly (container/codec/headers issues),
+ *   even though the URL works in a separate tab.
+ * - `audio_url` is the finalized MP3 and is the most reliable for the HTMLAudioElement.
+ *
+ * Strategy:
+ * - Prefer `audio_url` (usually ends with .mp3) for stable playback.
+ * - Fallback to `stream_audio_url` only if `audio_url` is not available.
  */
 export function getPlaybackUrl(track: SunoMusicTrack): string {
-  // Prefer stream URL for faster playback
+  // Prefer full audio URL (most reliable for <audio>)
+  if (track.audio_url) {
+    return track.audio_url;
+  }
+
+  // Fallback to stream URL if no audio_url is available
   if (track.stream_audio_url) {
     return track.stream_audio_url;
   }
-  
-  // Fallback to regular audio URL
-  return track.audio_url || '';
+
+  return '';
 }
 
 /**

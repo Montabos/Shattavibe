@@ -65,13 +65,23 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
 
     stopPlayback();
 
-    // Load new source
+    // Load new source with validation
     const playbackUrl = getPlaybackUrl(currentTrack);
-    if (playbackUrl && isTrackPlayable(currentTrack)) {
-      audio.src = playbackUrl;
-      audio.load(); // Force reload of the audio element
+    if (playbackUrl && playbackUrl.trim() !== '' && isTrackPlayable(currentTrack)) {
+      // Only update if URL is different
+      if (audio.src !== playbackUrl) {
+        audio.src = playbackUrl;
+        audio.load(); // Force reload of the audio element
+      }
     } else {
-      console.warn('Track not playable:', currentTrack);
+      console.warn('Track not playable or invalid URL:', {
+        track: currentTrack.title,
+        streamUrl: currentTrack.stream_audio_url,
+        audioUrl: currentTrack.audio_url,
+        playbackUrl
+      });
+      // Clear src if invalid
+      audio.src = '';
     }
 
     // Reset flag after a short delay
@@ -102,13 +112,28 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
         audio.pause();
         // setIsPlaying will be set by onPause event
       } else {
-        // Ensure audio is loaded
-        if (!audio.src || audio.readyState === 0) {
-          const playbackUrl = getPlaybackUrl(currentTrack);
-          if (playbackUrl) {
-            audio.src = playbackUrl;
+        // Get and validate playback URL
+        const playbackUrl = getPlaybackUrl(currentTrack);
+        if (!playbackUrl || playbackUrl.trim() === '') {
+          console.error('No valid playback URL available');
+          return;
+        }
+
+        // Ensure audio source is set and loaded
+        if (!audio.src || audio.src !== playbackUrl || audio.readyState === 0) {
+          audio.src = playbackUrl;
+          try {
             await audio.load();
+          } catch (loadError) {
+            console.error('Error loading audio:', loadError);
+            return;
           }
+        }
+
+        // Verify audio has a valid source before playing
+        if (!audio.src || audio.src === '' || audio.src === window.location.href) {
+          console.error('Audio element has no valid source');
+          return;
         }
         
         // Play with proper promise handling
@@ -125,6 +150,18 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
       // AbortError is normal when play() is interrupted - ignore it
       if (error instanceof Error && error.name === 'AbortError') {
         // This is expected behavior, do nothing
+        return;
+      }
+      
+      // NotSupportedError means no valid source - handle gracefully
+      if (error instanceof Error && error.name === 'NotSupportedError') {
+        console.error('Audio format not supported or no valid source:', {
+          track: currentTrack.title,
+          streamUrl: currentTrack.stream_audio_url,
+          audioUrl: currentTrack.audio_url,
+          audioSrc: audio.src
+        });
+        setIsPlaying(false);
         return;
       }
       
@@ -314,29 +351,47 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                   </div>
 
                   {/* Hidden audio element */}
-                  {currentTrack && isTrackPlayable(currentTrack) && (
-                    <audio
-                      ref={audioRef}
-                      key={currentTrack.id} // Force re-render when track changes
-                      preload="metadata"
-                      onEnded={() => setIsPlaying(false)}
-                      onPlay={() => setIsPlaying(true)}
-                      onPause={() => setIsPlaying(false)}
-                      onError={(e) => {
-                        console.error('Audio error:', e);
-                        setIsPlaying(false);
-                        // Try to reload if error occurs
-                        const audio = audioRef.current;
-                        if (audio) {
-                          const playbackUrl = getPlaybackUrl(currentTrack);
-                          if (playbackUrl && audio.src !== playbackUrl) {
-                            audio.src = playbackUrl;
-                            audio.load();
+                  {currentTrack && isTrackPlayable(currentTrack) && (() => {
+                    const playbackUrl = getPlaybackUrl(currentTrack);
+                    if (!playbackUrl || playbackUrl.trim() === '') {
+                      return null;
+                    }
+                    return (
+                      <audio
+                        ref={audioRef}
+                        key={currentTrack.id} // Force re-render when track changes
+                        src={playbackUrl}
+                        preload="metadata"
+                        onEnded={() => setIsPlaying(false)}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                        onError={(e) => {
+                          const audio = e.currentTarget;
+                          console.error('Audio error:', {
+                            error: e,
+                            src: audio.src,
+                            networkState: audio.networkState,
+                            readyState: audio.readyState,
+                            errorCode: audio.error?.code,
+                            errorMessage: audio.error?.message
+                          });
+                          setIsPlaying(false);
+                          
+                          // Try to reload with fallback URL if stream URL fails
+                          if (currentTrack) {
+                            const currentUrl = getPlaybackUrl(currentTrack);
+                            const fallbackUrl = currentTrack.audio_url || currentTrack.stream_audio_url;
+                            
+                            if (fallbackUrl && fallbackUrl !== currentUrl && audio.src !== fallbackUrl) {
+                              console.log('Trying fallback URL:', fallbackUrl);
+                              audio.src = fallbackUrl;
+                              audio.load();
+                            }
                           }
-                        }
-                      }}
-                    />
-                  )}
+                        }}
+                      />
+                    );
+                  })()}
 
                   {/* Waveform */}
                   <WaveformVisualizer isPlaying={isPlaying} />
