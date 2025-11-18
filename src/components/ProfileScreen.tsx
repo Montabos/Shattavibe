@@ -41,6 +41,42 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
   useEffect(() => {
     loadUserProfile();
     loadGenerations();
+
+    // Listen for auth state changes to reload data
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('ProfileScreen: Auth state changed:', event);
+      if (session?.user) {
+        // Reload data when user logs in
+        await loadUserProfile();
+        await loadGenerations();
+      } else {
+        // Clear data when user logs out
+        setUserProfile(null);
+        setGenerations([]);
+      }
+    });
+
+    // Listen for storage events (when session changes in another tab)
+    const handleStorageChange = async (e: StorageEvent) => {
+      if (e.key && e.key.includes('auth-token')) {
+        console.log('ProfileScreen: Session changed in another tab, reloading...');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await loadUserProfile();
+          await loadGenerations();
+        } else {
+          setUserProfile(null);
+          setGenerations([]);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const loadUserProfile = async () => {

@@ -6,6 +6,7 @@ import { WaveformVisualizer } from './WaveformVisualizer';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { GenerationService } from '@/lib/generationService';
+import { supabase } from '@/lib/supabase';
 import { getPlaybackUrl, downloadAudioTrack, copyTrackUrl, isTrackPlayable } from '@/lib/audioUtils';
 import { toast } from 'sonner';
 import type { SunoMusicTrack } from '@/types/suno';
@@ -38,7 +39,30 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
       const authenticated = await GenerationService.isAuthenticated();
       setIsAuthenticated(authenticated);
     };
+    
+    // Check auth on mount
     checkAuth();
+    
+    // Listen for auth state changes (including from other tabs)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('ResultScreen: Auth state changed:', event);
+      setIsAuthenticated(!!session);
+    });
+    
+    // Listen for storage events (when session changes in another tab)
+    const handleStorageChange = async (e: StorageEvent) => {
+      if (e.key && e.key.includes('auth-token')) {
+        console.log('ResultScreen: Session changed in another tab, refreshing...');
+        await checkAuth();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
   
   const hasReachedLimit = !isAuthenticated && LocalStorageService.hasReachedFreeLimit();

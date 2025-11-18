@@ -21,23 +21,43 @@ export default function App() {
 
   // Check authentication status and fetch user profile
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       setIsAuthenticated(!!session);
       if (session?.user) {
         fetchUserProfile(session.user.id);
       }
-    });
+    };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Check session on mount
+    checkSession();
+
+    // Listen for auth state changes (including from other tabs)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id);
       setIsAuthenticated(!!session);
       if (session?.user) {
-        fetchUserProfile(session.user.id);
+        await fetchUserProfile(session.user.id);
       } else {
         setUsername(null);
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Listen for storage events (when session changes in another tab)
+    const handleStorageChange = async (e: StorageEvent) => {
+      // Supabase stores session in localStorage with key like 'sb-<project-ref>-auth-token'
+      if (e.key && e.key.includes('auth-token')) {
+        console.log('Session changed in another tab, refreshing...');
+        await checkSession();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const fetchUserProfile = async (userId: string) => {

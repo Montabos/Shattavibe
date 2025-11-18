@@ -43,8 +43,10 @@ export function useSunoGeneration() {
    */
   const generate = useCallback(async (params: GenerateParams) => {
     try {
-      // Check if user is authenticated
-      const isAuthenticated = await GenerationService.isAuthenticated();
+      // Always check authentication fresh (don't rely on cached state)
+      // This ensures we get the latest auth state even if user logged in from another tab
+      const { data: { user } } = await supabase.auth.getUser();
+      const isAuthenticated = !!user;
 
       // If not authenticated, check free limit
       if (!isAuthenticated && LocalStorageService.hasReachedFreeLimit()) {
@@ -140,9 +142,11 @@ export function useSunoGeneration() {
   const checkForTracks = useCallback(async (taskId: string) => {
     console.log('🔄 Polling for task:', taskId);
     try {
-      // Check if authenticated user
-      const isAuthenticated = await GenerationService.isAuthenticated();
-      console.log('🔐 Is authenticated:', isAuthenticated);
+      // Always check authentication fresh (don't rely on cached state)
+      // This ensures we get the latest auth state even if user logged in from another tab
+      const { data: { user } } = await supabase.auth.getUser();
+      const isAuthenticated = !!user;
+      console.log('🔐 Is authenticated:', isAuthenticated, 'User ID:', user?.id);
       
       let shouldCheckAnonymous = false;
       

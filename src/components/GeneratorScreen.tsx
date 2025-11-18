@@ -5,6 +5,7 @@ import { FloatingCard } from './FloatingCard';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { GenerationService } from '@/lib/generationService';
+import { supabase } from '@/lib/supabase';
 
 interface GeneratorScreenProps {
   onBack: () => void;
@@ -27,7 +28,30 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
       const authenticated = await GenerationService.isAuthenticated();
       setIsAuthenticated(authenticated);
     };
+    
+    // Check auth on mount
     checkAuth();
+    
+    // Listen for auth state changes (including from other tabs)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('GeneratorScreen: Auth state changed:', event);
+      setIsAuthenticated(!!session);
+    });
+    
+    // Listen for storage events (when session changes in another tab)
+    const handleStorageChange = async (e: StorageEvent) => {
+      if (e.key && e.key.includes('auth-token')) {
+        console.log('GeneratorScreen: Session changed in another tab, refreshing...');
+        await checkAuth();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
   
   const remainingFree = LocalStorageService.getRemainingFreeGenerations();
