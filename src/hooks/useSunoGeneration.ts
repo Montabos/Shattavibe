@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { sunoApi } from '@/lib/sunoApi';
 import { GenerationService } from '@/lib/generationService';
 import { LocalStorageService } from '@/lib/localStorageService';
-import { SessionStorageService } from '@/lib/sessionStorageService';
 import { supabase } from '@/lib/supabase';
 import type { SunoMusicTrack, SunoModel } from '@/types/suno';
 
@@ -228,14 +227,8 @@ export function useSunoGeneration() {
             
             const prompt = genData?.prompt || 'Generated music';
             
-            // Save to session storage
-            SessionStorageService.addGeneration({
-              id: crypto.randomUUID(),
-              taskId,
-              prompt,
-              tracks: trackData,
-              createdAt: new Date().toISOString(),
-            });
+            // Tracks are already saved in Supabase via webhook callback
+            // No need to save to sessionStorage anymore
             
             setState({
               status: 'completed',
@@ -332,18 +325,17 @@ export function useSunoGeneration() {
             
             console.log('🎉 Tracks loaded! Updating state...');
             
-            // Get the prompt from localStorage
-            const localGen = LocalStorageService.getGenerationByTaskId(taskId);
-            const prompt = localGen?.prompt || 'Generated music';
+            // Get the prompt from anonymous_generations table
+            const { data: anonGen } = await supabase
+              .from('anonymous_generations')
+              .select('prompt')
+              .eq('task_id', taskId)
+              .maybeSingle();
             
-            // Save to session storage for access during this session
-            SessionStorageService.addGeneration({
-              id: crypto.randomUUID(),
-              taskId,
-              prompt,
-              tracks: trackData,
-              createdAt: new Date().toISOString(),
-            });
+            const prompt = anonGen?.prompt || 'Generated music';
+            
+            // Tracks are already saved in Supabase via webhook callback
+            // No need to save to sessionStorage or localStorage anymore
             
             setState({
               status: 'completed',
@@ -353,9 +345,6 @@ export function useSunoGeneration() {
               progress: 'Music generation completed!',
               remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
             });
-
-            // Save to localStorage for offline access
-            LocalStorageService.saveTracks(taskId, trackData);
             
             // Stop polling
             if (pollingIntervalRef.current) {
@@ -379,9 +368,10 @@ export function useSunoGeneration() {
    * Start polling for tracks
    */
   useEffect(() => {
-    console.log('📡 useEffect - taskId:', state.taskId, 'status:', state.status);
+    // Only log when actually starting polling to reduce noise
     if (state.taskId && (state.status === 'generating' || state.status === 'polling')) {
       console.log('✅ Starting polling for task:', state.taskId);
+      
       // Start polling every 5 seconds
       setState((prev) => ({
         ...prev,
@@ -407,7 +397,9 @@ export function useSunoGeneration() {
         }
       };
     }
-  }, [state.taskId, state.status, checkForTracks]);
+    // Remove checkForTracks from dependencies - it's stable (no dependencies in useCallback)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.taskId, state.status]);
 
   /**
    * Reset state

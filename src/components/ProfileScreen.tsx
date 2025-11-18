@@ -9,6 +9,7 @@ import type { SunoMusicTrack } from '@/types/suno';
 
 interface ProfileScreenProps {
   onBack: () => void;
+  onAuthClick?: () => void;
 }
 
 interface UserProfile {
@@ -27,7 +28,7 @@ interface Generation {
   tracks?: SunoMusicTrack[];
 }
 
-export function ProfileScreen({ onBack }: ProfileScreenProps) {
+export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,33 +82,41 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
     }
   };
 
+  const lastUserIdRef = useRef<string | null>(null);
+  const isLoadingRef = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
-    let isLoading = false;
-    let lastUserId: string | null = null;
+    let storageTimeout: NodeJS.Timeout | null = null;
 
     const loadData = async () => {
-      if (isLoading) return; // Prevent concurrent loads
-      isLoading = true;
+      if (isLoadingRef.current) return; // Prevent concurrent loads
+      isLoadingRef.current = true;
+      setLoading(true); // Set loading state
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!isMounted) return;
         
         // Only reload if user changed
-        if (user?.id !== lastUserId) {
-          lastUserId = user?.id || null;
+        if (user?.id !== lastUserIdRef.current) {
+          lastUserIdRef.current = user?.id || null;
           if (user) {
             await loadUserProfile();
             await loadGenerations();
           } else {
             setUserProfile(null);
             setGenerations([]);
+            setLoading(false); // Make sure to set loading to false when not authenticated
           }
+        } else {
+          // User hasn't changed, but we still need to ensure loading is false
+          setLoading(false);
         }
       } catch (error) {
         console.error('Error loading data:', error);
+        setLoading(false); // Set loading to false on error
       } finally {
-        isLoading = false;
+        isLoadingRef.current = false;
       }
     };
 
@@ -116,29 +125,40 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
 
     // Listen for auth state changes to reload data
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('ProfileScreen: Auth state changed:', event);
+      console.log('ProfileScreen: Auth state changed:', event, 'User ID:', session?.user?.id);
       if (!isMounted) return;
       
       // Only reload on SIGNED_IN or SIGNED_OUT events, not on TOKEN_REFRESHED
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        lastUserId = session?.user?.id || null;
-        await loadData();
+        const currentUserId = session?.user?.id || null;
+        const wasAuthenticated = lastUserIdRef.current !== null;
+        const isNowAuthenticated = currentUserId !== null;
+        
+        console.log('ProfileScreen: Auth check - currentUserId:', currentUserId, 'lastUserId:', lastUserIdRef.current, 'wasAuth:', wasAuthenticated, 'isNowAuth:', isNowAuthenticated);
+        
+        // Update if user changed OR authentication state changed
+        if (currentUserId !== lastUserIdRef.current || wasAuthenticated !== isNowAuthenticated) {
+          console.log('ProfileScreen: ✅ Reloading data');
+          lastUserIdRef.current = currentUserId;
+          await loadData();
+        } else {
+          console.log('ProfileScreen: ⚠️ Skipping reload - user unchanged');
+        }
       }
     });
 
     // Listen for storage events (when session changes in another tab)
     // Use a debounce to prevent multiple rapid reloads
-    let storageTimeout: NodeJS.Timeout | null = null;
     const handleStorageChange = async (e: StorageEvent) => {
       if (e.key && e.key.includes('auth-token')) {
         console.log('ProfileScreen: Session changed in another tab, reloading...');
-        // Debounce to prevent multiple rapid reloads
+        // Debounce to prevent multiple rapid reloads and avoid race with onAuthStateChange
         if (storageTimeout) clearTimeout(storageTimeout);
         storageTimeout = setTimeout(() => {
           if (isMounted) {
             loadData();
           }
-        }, 300); // 300ms debounce
+        }, 500); // 500ms debounce to let onAuthStateChange handle it first if it fires
       }
     };
 
@@ -409,9 +429,13 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
+      // Wait a bit to ensure signOut is complete
+      await new Promise(resolve => setTimeout(resolve, 100));
       onBack(); // Return to home
     } catch (error) {
       console.error('Error signing out:', error);
+      // Still redirect even if there's an error
+      onBack();
     }
   };
 
@@ -531,7 +555,24 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
           transition={{ delay: 0.3 }}
           className="space-y-4 mb-6"
         >
-          {generations.length === 0 ? (
+          {!userProfile && !loading ? (
+            <FloatingCard delay={0.4} rotation={0}>
+              <div className="text-center py-8">
+                <User className="w-12 h-12 text-white/30 mx-auto mb-3" />
+                <p className="text-white/70 mb-4">Connectez-vous pour sauvegarder vos tracks</p>
+                {onAuthClick && (
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={onAuthClick}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#FF69B4] to-[#00BFFF] text-white font-medium"
+                  >
+                    Se connecter
+                  </motion.button>
+                )}
+              </div>
+            </FloatingCard>
+          ) : generations.length === 0 ? (
             <FloatingCard delay={0.4} rotation={0}>
               <div className="text-center py-8">
                 <Music className="w-12 h-12 text-white/30 mx-auto mb-3" />
@@ -638,22 +679,24 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
           )}
         </motion.div>
 
-        {/* Logout Button */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.8 }}
-          className={currentTrack ? 'mb-32' : ''}
-        >
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={handleLogout}
-            className="w-full py-4 rounded-2xl bg-white/10 backdrop-blur-xl text-white flex items-center justify-center gap-2 border border-white/20"
+        {/* Logout Button - Only show when authenticated */}
+        {userProfile && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+            className={currentTrack ? 'mb-32' : ''}
           >
-            <LogOut className="w-5 h-5" />
-            Logout
-          </motion.button>
-        </motion.div>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handleLogout}
+              className="w-full py-4 rounded-2xl bg-white/10 backdrop-blur-xl text-white flex items-center justify-center gap-2 border border-white/20"
+            >
+              <LogOut className="w-5 h-5" />
+              Logout
+            </motion.button>
+          </motion.div>
+        )}
       </div>
 
       {/* Hidden audio element */}

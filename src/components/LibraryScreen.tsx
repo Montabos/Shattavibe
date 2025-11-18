@@ -1,38 +1,246 @@
 import { motion } from 'motion/react';
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Play, Pause, Download, Music2, Library } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Download, Music2, Library, LogIn } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
-import { SessionStorageService, type SessionGeneration } from '@/lib/sessionStorageService';
+import { GenerationService } from '@/lib/generationService';
+import { supabase } from '@/lib/supabase';
 import { getPlaybackUrl, getDownloadUrl, isTrackPlayable } from '@/lib/audioUtils';
+import type { SunoMusicTrack } from '@/types/suno';
 
 interface LibraryScreenProps {
   onBack: () => void;
+  onAuthClick?: () => void;
 }
 
-export function LibraryScreen({ onBack }: LibraryScreenProps) {
-  const [sessionGenerations] = useState<SessionGeneration[]>(
-    SessionStorageService.getSessionGenerations()
-  );
-  const [selectedGeneration, setSelectedGeneration] = useState<SessionGeneration | null>(
-    sessionGenerations.length > 0 ? sessionGenerations[0] : null
-  );
+interface LibraryGeneration {
+  id: string;
+  taskId?: string;
+  prompt: string;
+  model: string;
+  status: string;
+  createdAt: string;
+  tracks: SunoMusicTrack[];
+}
+
+export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
+  console.log('🔵 LibraryScreen: Component rendering');
+  
+  const [generations, setGenerations] = useState<LibraryGeneration[]>([]);
+  const [selectedGeneration, setSelectedGeneration] = useState<LibraryGeneration | null>(null);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
   const isChangingTrackRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
+  const isLoadingRef = useRef(false);
 
   const currentTrack = selectedGeneration?.tracks[currentTrackIndex];
+  
+  console.log('🔵 LibraryScreen: State - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated, 'generations:', generations.length);
 
-  // Load session generations on mount
+  // Load generations from Supabase
+  const loadGenerations = async () => {
+    console.log('🔵 LibraryScreen: loadGenerations called, isLoadingRef.current:', isLoadingRef.current);
+    if (isLoadingRef.current) {
+      console.log('⚠️ LibraryScreen: Already loading, skipping...');
+      return;
+    }
+    console.log('🔵 LibraryScreen: Starting load, setting isLoadingRef to true');
+    isLoadingRef.current = true;
+    setLoading(true);
+    
+    // Safety timeout - always set loading to false after 5 seconds
+    const timeoutId = setTimeout(() => {
+      console.warn('LibraryScreen: Load timeout, forcing loading to false');
+      // Try to get auth state one more time before giving up
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        setIsAuthenticated(!!user);
+      }).catch((err) => {
+        console.error('LibraryScreen: Error checking auth in timeout:', err);
+        // Default to not authenticated if we can't check
+        setIsAuthenticated(false);
+      });
+      setLoading(false);
+      isLoadingRef.current = false;
+    }, 5000);
+    
+    try {
+      console.log('LibraryScreen: Starting to load generations...');
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error('LibraryScreen: Auth error:', authError);
+      }
+      
+      setIsAuthenticated(!!user);
+      console.log('LibraryScreen: User authenticated:', !!user);
+      
+      let loadedGenerations: LibraryGeneration[] = [];
+      
+      if (user) {
+        // Authenticated: load from generations table
+        console.log('LibraryScreen: Loading authenticated generations...');
+        const userGenerations = await GenerationService.getUserGenerations(50);
+        console.log('LibraryScreen: Found', userGenerations.length, 'generations');
+        
+        const generationsWithTracks = await Promise.all(
+          userGenerations.map(async (gen) => {
+            const tracks = await GenerationService.getGenerationTracks(gen.id);
+            return {
+              id: gen.id,
+              taskId: gen.task_id,
+              prompt: gen.prompt,
+              model: gen.model,
+              status: gen.status,
+              createdAt: gen.created_at,
+              tracks: tracks.map(track => ({
+                id: track.suno_id,
+                title: track.title,
+                tags: track.tags,
+                prompt: track.prompt,
+                model_name: track.model_name,
+                audio_url: track.audio_url,
+                source_audio_url: track.source_audio_url,
+                stream_audio_url: track.stream_audio_url,
+                image_url: track.image_url,
+                duration: track.duration,
+              })),
+            };
+          })
+        );
+        
+        loadedGenerations = generationsWithTracks;
+      } else {
+        // Anonymous: load from anonymous_generations table
+        console.log('LibraryScreen: Loading anonymous generations...');
+        const anonymousGens = await GenerationService.getAnonymousGenerations(50);
+        console.log('LibraryScreen: Found', anonymousGens.length, 'anonymous generations');
+        
+        loadedGenerations = anonymousGens.map(gen => ({
+          id: gen.task_id,
+          taskId: gen.task_id,
+          prompt: gen.prompt,
+          model: gen.model,
+          status: gen.status,
+          createdAt: gen.created_at,
+          tracks: gen.tracks,
+        }));
+      }
+      
+      console.log('LibraryScreen: Setting', loadedGenerations.length, 'generations');
+      setGenerations(loadedGenerations);
+      
+      // Set first generation as selected if available
+      if (loadedGenerations.length > 0 && !selectedGeneration) {
+        setSelectedGeneration(loadedGenerations[0]);
+        setCurrentTrackIndex(0);
+      } else if (loadedGenerations.length === 0) {
+        setSelectedGeneration(null);
+        setCurrentTrackIndex(0);
+      }
+    } catch (error) {
+      console.error('LibraryScreen: Error loading generations:', error);
+      setGenerations([]);
+      setSelectedGeneration(null);
+    } finally {
+      clearTimeout(timeoutId);
+      console.log('LibraryScreen: Setting loading to false');
+      setLoading(false);
+      isLoadingRef.current = false;
+    }
+  };
+
   useEffect(() => {
-    // Simulate async loading to show loading state
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 100);
-    return () => clearTimeout(timer);
+    console.log('🔵 LibraryScreen: useEffect running');
+    let isMounted = true;
+    let storageTimeout: NodeJS.Timeout | null = null;
+    let fallbackTimeout: NodeJS.Timeout | null = null;
+
+    // Fallback: Force loading to false after 3 seconds if still loading
+    // This is a safety net in case loadGenerations doesn't complete
+    fallbackTimeout = setTimeout(() => {
+      console.log('🔵 LibraryScreen: Fallback timeout triggered, isLoadingRef.current:', isLoadingRef.current);
+      if (isMounted && isLoadingRef.current) {
+        console.warn('⚠️ LibraryScreen: Fallback timeout - forcing loading to false');
+        setIsLoading(false);
+        isLoadingRef.current = false;
+        // Ensure we check auth state
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          console.log('🔵 LibraryScreen: Fallback auth check - user:', !!user);
+          if (isMounted) {
+            setIsAuthenticated(!!user);
+          }
+        }).catch((err) => {
+          console.error('🔵 LibraryScreen: Fallback auth error:', err);
+          if (isMounted) {
+            setIsAuthenticated(false);
+          }
+        });
+      } else {
+        console.log('🔵 LibraryScreen: Fallback timeout skipped - not mounted or not loading');
+      }
+    }, 3000);
+
+    // Initial load - always load on mount
+    console.log('🔵 LibraryScreen: Calling loadGenerations');
+    loadGenerations();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('LibraryScreen: Auth state changed:', event, 'User ID:', session?.user?.id);
+      if (!isMounted) return;
+      
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        const currentUserId = session?.user?.id || null;
+        const wasAuthenticated = lastUserIdRef.current !== null;
+        const isNowAuthenticated = currentUserId !== null;
+        
+        // Update authentication state immediately
+        setIsAuthenticated(isNowAuthenticated);
+        
+        if (currentUserId !== lastUserIdRef.current || wasAuthenticated !== isNowAuthenticated) {
+          console.log('LibraryScreen: ✅ Reloading data');
+          lastUserIdRef.current = currentUserId;
+          await loadGenerations();
+        }
+      }
+    });
+
+    // Listen for storage events (when session changes in another tab)
+    const handleStorageChange = async (e: StorageEvent) => {
+      if (e.key && e.key.includes('auth-token')) {
+        console.log('LibraryScreen: Session changed in another tab, reloading...');
+        if (storageTimeout) clearTimeout(storageTimeout);
+        storageTimeout = setTimeout(async () => {
+          if (isMounted) {
+            // Check auth state and reload
+            const { data: { user } } = await supabase.auth.getUser();
+            if (isMounted) {
+              setIsAuthenticated(!!user);
+              const currentUserId = user?.id || null;
+              if (currentUserId !== lastUserIdRef.current) {
+                lastUserIdRef.current = currentUserId;
+                await loadGenerations();
+              }
+            }
+          }
+        }, 500);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+      if (storageTimeout) clearTimeout(storageTimeout);
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+    };
   }, []);
 
   // Update audio source when track changes
@@ -240,6 +448,10 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
           <div className="w-10" /> {/* Spacer for centering */}
         </div>
 
+        {(() => {
+          console.log('🔵 LibraryScreen: Rendering - isLoading:', isLoading, 'generations.length:', generations.length, 'isAuthenticated:', isAuthenticated);
+          return null;
+        })()}
         {isLoading ? (
           // Loading state
           <motion.div
@@ -253,7 +465,7 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
               Récupération de votre bibliothèque
             </p>
           </motion.div>
-        ) : sessionGenerations.length === 0 ? (
+        ) : generations.length === 0 ? (
           // Empty state
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -262,19 +474,31 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
           >
             <Music2 className="w-20 h-20 text-white/30 mx-auto mb-4" />
             <h2 className="text-2xl text-white/80 mb-2">Aucune musique</h2>
-            <p className="text-white/60">
+            <p className="text-white/60 mb-6">
               Générez votre première track pour la voir ici !
             </p>
+            {/* Always show login button if not authenticated, even if onAuthClick is not provided */}
+            {!isAuthenticated && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onAuthClick || (() => console.warn('onAuthClick not provided'))}
+                className="px-6 py-3 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center gap-2 hover:bg-white/30 transition-all mx-auto"
+              >
+                <LogIn className="w-5 h-5 text-white" />
+                <span className="text-white font-medium">Se connecter</span>
+              </motion.button>
+            )}
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Library List */}
             <div>
               <h3 className="text-white/90 mb-4 text-lg font-medium">
-                {sessionGenerations.length} musique{sessionGenerations.length > 1 ? 's' : ''}
+                {generations.length} musique{generations.length > 1 ? 's' : ''}
               </h3>
               <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2">
-                {sessionGenerations.map((gen, index) => (
+                {generations.map((gen, index) => (
                   <motion.button
                     key={gen.id}
                     initial={{ opacity: 0, x: -20 }}
@@ -311,7 +535,7 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                     <div className="flex items-start justify-between">
                       <div className="text-left flex-1">
                         <p className="text-white font-medium mb-1">
-                          {gen.tracks[0]?.title || `Track ${sessionGenerations.length - index}`}
+                          {gen.tracks[0]?.title || `Track ${generations.length - index}`}
                         </p>
                         <p className="text-white/70 text-sm mb-1 line-clamp-2">
                           {gen.tracks[0]?.tags || gen.prompt}
@@ -328,6 +552,23 @@ export function LibraryScreen({ onBack }: LibraryScreenProps) {
                     </div>
                   </motion.button>
                 ))}
+                {!isAuthenticated && onAuthClick && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 pt-4 border-t border-white/20"
+                  >
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={onAuthClick}
+                      className="w-full px-6 py-3 rounded-2xl bg-white/20 backdrop-blur-xl flex items-center justify-center gap-2 hover:bg-white/30 transition-all"
+                    >
+                      <LogIn className="w-5 h-5 text-white" />
+                      <span className="text-white font-medium">Se connecter pour sauvegarder vos tracks</span>
+                    </motion.button>
+                  </motion.div>
+                )}
               </div>
             </div>
 
