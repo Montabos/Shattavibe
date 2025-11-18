@@ -21,11 +21,33 @@ export default function App() {
 
   // Check authentication status and fetch user profile
   useEffect(() => {
+    let isMounted = true;
+    let lastUserId: string | null = null;
+    let isChecking = false;
+
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsAuthenticated(!!session);
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
+      if (isChecking) return; // Prevent concurrent checks
+      isChecking = true;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
+        
+        const currentUserId = session?.user?.id || null;
+        
+        // Only update if user changed
+        if (currentUserId !== lastUserId) {
+          lastUserId = currentUserId;
+          setIsAuthenticated(!!session);
+          if (session?.user) {
+            await fetchUserProfile(session.user.id);
+          } else {
+            setUsername(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+      } finally {
+        isChecking = false;
       }
     };
 
@@ -33,30 +55,50 @@ export default function App() {
     checkSession();
 
     // Listen for auth state changes (including from other tabs)
+    // Only react to SIGNED_IN and SIGNED_OUT, not TOKEN_REFRESHED
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event, session?.user?.id);
-      setIsAuthenticated(!!session);
-      if (session?.user) {
-        await fetchUserProfile(session.user.id);
-      } else {
-        setUsername(null);
+      if (!isMounted) return;
+      
+      // Only update on actual sign in/out events
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        const currentUserId = session?.user?.id || null;
+        if (currentUserId !== lastUserId) {
+          lastUserId = currentUserId;
+          setIsAuthenticated(!!session);
+          if (session?.user) {
+            await fetchUserProfile(session.user.id);
+          } else {
+            setUsername(null);
+          }
+        }
       }
     });
 
     // Listen for storage events (when session changes in another tab)
+    // Use debounce to prevent multiple rapid checks
+    let storageTimeout: NodeJS.Timeout | null = null;
     const handleStorageChange = async (e: StorageEvent) => {
       // Supabase stores session in localStorage with key like 'sb-<project-ref>-auth-token'
       if (e.key && e.key.includes('auth-token')) {
         console.log('Session changed in another tab, refreshing...');
-        await checkSession();
+        // Debounce to prevent multiple rapid checks
+        if (storageTimeout) clearTimeout(storageTimeout);
+        storageTimeout = setTimeout(() => {
+          if (isMounted) {
+            checkSession();
+          }
+        }, 300); // 300ms debounce
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
       window.removeEventListener('storage', handleStorageChange);
+      if (storageTimeout) clearTimeout(storageTimeout);
     };
   }, []);
 

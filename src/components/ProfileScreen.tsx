@@ -38,47 +38,6 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
   const [duration, setDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  useEffect(() => {
-    loadUserProfile();
-    loadGenerations();
-
-    // Listen for auth state changes to reload data
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('ProfileScreen: Auth state changed:', event);
-      if (session?.user) {
-        // Reload data when user logs in
-        await loadUserProfile();
-        await loadGenerations();
-      } else {
-        // Clear data when user logs out
-        setUserProfile(null);
-        setGenerations([]);
-      }
-    });
-
-    // Listen for storage events (when session changes in another tab)
-    const handleStorageChange = async (e: StorageEvent) => {
-      if (e.key && e.key.includes('auth-token')) {
-        console.log('ProfileScreen: Session changed in another tab, reloading...');
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await loadUserProfile();
-          await loadGenerations();
-        } else {
-          setUserProfile(null);
-          setGenerations([]);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    return () => {
-      subscription.unsubscribe();
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
   const loadUserProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -121,6 +80,77 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
       console.error('Error loading generations:', error);
     }
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    let isLoading = false;
+    let lastUserId: string | null = null;
+
+    const loadData = async () => {
+      if (isLoading) return; // Prevent concurrent loads
+      isLoading = true;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!isMounted) return;
+        
+        // Only reload if user changed
+        if (user?.id !== lastUserId) {
+          lastUserId = user?.id || null;
+          if (user) {
+            await loadUserProfile();
+            await loadGenerations();
+          } else {
+            setUserProfile(null);
+            setGenerations([]);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        isLoading = false;
+      }
+    };
+
+    // Initial load
+    loadData();
+
+    // Listen for auth state changes to reload data
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('ProfileScreen: Auth state changed:', event);
+      if (!isMounted) return;
+      
+      // Only reload on SIGNED_IN or SIGNED_OUT events, not on TOKEN_REFRESHED
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        lastUserId = session?.user?.id || null;
+        await loadData();
+      }
+    });
+
+    // Listen for storage events (when session changes in another tab)
+    // Use a debounce to prevent multiple rapid reloads
+    let storageTimeout: NodeJS.Timeout | null = null;
+    const handleStorageChange = async (e: StorageEvent) => {
+      if (e.key && e.key.includes('auth-token')) {
+        console.log('ProfileScreen: Session changed in another tab, reloading...');
+        // Debounce to prevent multiple rapid reloads
+        if (storageTimeout) clearTimeout(storageTimeout);
+        storageTimeout = setTimeout(() => {
+          if (isMounted) {
+            loadData();
+          }
+        }, 300); // 300ms debounce
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+      if (storageTimeout) clearTimeout(storageTimeout);
+    };
+  }, []);
 
   // Update audio source and reset player when track changes
   useEffect(() => {
