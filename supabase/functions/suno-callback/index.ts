@@ -106,6 +106,18 @@ serve(async (req) => {
 
         console.log('✅ Found in anonymous_generations - saving anonymous tracks')
 
+        // Get the generation to retrieve session_id
+        const { data: anonymousGen, error: genFetchError } = await supabaseClient
+          .from('anonymous_generations')
+          .select('session_id')
+          .eq('task_id', task_id)
+          .single()
+
+        if (genFetchError || !anonymousGen) {
+          console.error('❌ Error fetching anonymous generation for session_id:', genFetchError)
+          throw genFetchError || new Error('Anonymous generation not found')
+        }
+
         // Update status: 'processing' for text/first callbacks (stream_audio_url available), 'completed' for complete callback
         const newStatus = callbackType === 'complete' ? 'completed' : 'processing'
         await supabaseClient
@@ -115,6 +127,7 @@ serve(async (req) => {
 
         // Upsert anonymous tracks (insert or update if exists)
         // Note: duration might be null in early callbacks (text/first), default to 0
+        // Include session_id from the generation
         const anonTrackUpserts = tracks.map((track) => ({
           task_id: task_id,
           suno_id: track.id,
@@ -127,6 +140,7 @@ serve(async (req) => {
           stream_audio_url: track.stream_audio_url || '',
           image_url: track.image_url || '',
           duration: track.duration || 0,
+          session_id: anonymousGen.session_id, // Include session_id from generation
         }))
 
         const { error: anonTracksError } = await supabaseClient

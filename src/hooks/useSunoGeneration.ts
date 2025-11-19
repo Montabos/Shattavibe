@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { sunoApi } from '@/lib/sunoApi';
 import { GenerationService } from '@/lib/generationService';
-import { LocalStorageService } from '@/lib/localStorageService';
 import { supabase } from '@/lib/supabase';
 import type { SunoMusicTrack, SunoModel } from '@/types/suno';
 
@@ -32,10 +31,27 @@ export function useSunoGeneration() {
     tracks: null,
     error: null,
     progress: 'Ready to generate',
-    remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+    remainingFreeGenerations: 2, // Will be updated on mount
   });
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper function to update remaining free generations
+  const updateRemainingFree = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      const remaining = await GenerationService.getRemainingAnonymousFreeGenerations();
+      setState(prev => ({ ...prev, remainingFreeGenerations: remaining }));
+    } else {
+      // Authenticated users have unlimited
+      setState(prev => ({ ...prev, remainingFreeGenerations: Infinity }));
+    }
+  }, []);
+
+  // Load remaining free generations on mount and when auth state changes
+  useEffect(() => {
+    updateRemainingFree();
+  }, [updateRemainingFree]);
 
   /**
    * Generate music
@@ -48,17 +64,25 @@ export function useSunoGeneration() {
       const isAuthenticated = !!user;
 
       // If not authenticated, check free limit
-      if (!isAuthenticated && LocalStorageService.hasReachedFreeLimit()) {
-        setState({
-          status: 'limit_reached',
-          taskId: null,
-          tracks: null,
-          error: null,
-          progress: 'Free limit reached. Please sign in to continue.',
-          remainingFreeGenerations: 0,
-        });
-        throw new Error('Free generation limit reached');
+      if (!isAuthenticated) {
+        const hasReachedLimit = await GenerationService.hasReachedAnonymousFreeLimit();
+        if (hasReachedLimit) {
+          const remaining = await GenerationService.getRemainingAnonymousFreeGenerations();
+          setState({
+            status: 'limit_reached',
+            taskId: null,
+            tracks: null,
+            error: null,
+            progress: 'Free limit reached. Please sign in to continue.',
+            remainingFreeGenerations: remaining,
+          });
+          throw new Error('Free generation limit reached');
+        }
       }
+
+      const remaining = isAuthenticated 
+        ? Infinity 
+        : await GenerationService.getRemainingAnonymousFreeGenerations();
 
       setState({
         status: 'generating',
@@ -66,7 +90,7 @@ export function useSunoGeneration() {
         tracks: null,
         error: null,
         progress: 'Submitting generation request...',
-        remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+        remainingFreeGenerations: remaining,
       });
 
       // Get callback URL (Supabase Edge Function or webhook.site)
@@ -98,14 +122,22 @@ export function useSunoGeneration() {
 
       await GenerationService.updateGenerationStatus(taskId, 'processing');
 
+      // Update remaining free generations after creating generation
+      await updateRemainingFree();
+
       // Start polling for tracks (status will be updated to 'polling' in useEffect)
+      const { data: { user } } = await supabase.auth.getUser();
+      const remaining = user 
+        ? Infinity 
+        : await GenerationService.getRemainingAnonymousFreeGenerations();
+      
       setState({
         status: 'polling',
         taskId,
         tracks: null,
         error: null,
         progress: 'Creating your music... 30-40 seconds remaining!',
-        remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+        remainingFreeGenerations: remaining,
       });
 
       // Polling will happen in useEffect
@@ -123,17 +155,23 @@ export function useSunoGeneration() {
 
       const isLimitError = errorMessage.includes('limit reached');
       
+      // Update remaining free generations
+      const { data: { user } } = await supabase.auth.getUser();
+      const remaining = user 
+        ? Infinity 
+        : await GenerationService.getRemainingAnonymousFreeGenerations();
+      
       setState((prev) => ({
         ...prev,
         status: isLimitError ? 'limit_reached' : 'error',
         error: errorMessage,
         progress: isLimitError ? 'Free limit reached' : 'Generation failed',
-        remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+        remainingFreeGenerations: remaining,
       }));
 
       throw error;
     }
-  }, [state.taskId]);
+  }, [state.taskId, updateRemainingFree]);
 
   /**
    * Poll Supabase for tracks
@@ -170,13 +208,18 @@ export function useSunoGeneration() {
 
         // Check if generation failed
         if (generation.status === 'failed') {
+          const { data: { user } } = await supabase.auth.getUser();
+          const remaining = user 
+            ? Infinity 
+            : await GenerationService.getRemainingAnonymousFreeGenerations();
+          
           setState({
             status: 'error',
             taskId,
             tracks: null,
             error: 'Music generation failed',
             progress: 'Generation failed',
-            remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+            remainingFreeGenerations: remaining,
           });
           
           // Stop polling
@@ -230,13 +273,19 @@ export function useSunoGeneration() {
             // Tracks are already saved in Supabase via webhook callback
             // No need to save to sessionStorage anymore
             
+            // Update remaining free generations after completion
+            const { data: { user } } = await supabase.auth.getUser();
+            const remaining = user 
+              ? Infinity 
+              : await GenerationService.getRemainingAnonymousFreeGenerations();
+            
             setState({
               status: 'completed',
               taskId,
               tracks: trackData,
               error: null,
               progress: 'Music generation completed!',
-              remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+              remainingFreeGenerations: remaining,
             });
             
             // Stop polling
@@ -275,13 +324,15 @@ export function useSunoGeneration() {
 
         // Check if generation failed
         if (anonGen.status === 'failed') {
+          const remaining = await GenerationService.getRemainingAnonymousFreeGenerations();
+          
           setState({
             status: 'error',
             taskId,
             tracks: null,
             error: 'Music generation failed',
             progress: 'Generation failed',
-            remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+            remainingFreeGenerations: remaining,
           });
           
           // Stop polling
@@ -337,13 +388,16 @@ export function useSunoGeneration() {
             // Tracks are already saved in Supabase via webhook callback
             // No need to save to sessionStorage or localStorage anymore
             
+            // Update remaining free generations after completion
+            const remaining = await GenerationService.getRemainingAnonymousFreeGenerations();
+            
             setState({
               status: 'completed',
               taskId,
               tracks: trackData,
               error: null,
               progress: 'Music generation completed!',
-              remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+              remainingFreeGenerations: remaining,
             });
             
             // Stop polling
@@ -411,15 +465,18 @@ export function useSunoGeneration() {
       pollingIntervalRef.current = null;
     }
 
-    setState({
-      status: 'idle',
-      taskId: null,
-      tracks: null,
-      error: null,
-      progress: 'Ready to generate',
-      remainingFreeGenerations: LocalStorageService.getRemainingFreeGenerations(),
+    // Update remaining free generations on reset
+    updateRemainingFree().then(() => {
+      setState(prev => ({
+        ...prev,
+        status: 'idle',
+        taskId: null,
+        tracks: null,
+        error: null,
+        progress: 'Ready to generate',
+      }));
     });
-  }, []);
+  }, [updateRemainingFree]);
 
   return {
     // State

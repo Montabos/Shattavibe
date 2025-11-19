@@ -1,6 +1,7 @@
 // Generation Service - Manages music generation with Supabase
 
 import { supabase } from './supabase';
+import { getAnonymousSessionId } from './anonymousSessionService';
 import type { SunoMusicTrack } from '@/types/suno';
 import type { Database } from '@/types/database';
 
@@ -13,10 +14,11 @@ type TrackInsert = Database['public']['Tables']['tracks']['Insert'];
 export class GenerationService {
   /**
    * Check if user is authenticated
+   * Use getSession() instead of getUser() to avoid cached data after logout
    */
   static async isAuthenticated(): Promise<boolean> {
-    const { data: { user } } = await supabase.auth.getUser();
-    return !!user;
+    const { data: { session } } = await supabase.auth.getSession();
+    return !!session?.user;
   }
 
   /**
@@ -33,6 +35,7 @@ export class GenerationService {
     
     // For anonymous users, save to anonymous_generations table
     if (!user) {
+      const sessionId = getAnonymousSessionId();
       const { error } = await supabase
         .from('anonymous_generations')
         .insert({
@@ -41,6 +44,7 @@ export class GenerationService {
           model: data.model,
           instrumental: data.instrumental,
           status: 'pending',
+          session_id: sessionId,
         });
 
       if (error) {
@@ -83,13 +87,15 @@ export class GenerationService {
 
     // If not authenticated, update anonymous_generations table
     if (!isAuth) {
+      const sessionId = getAnonymousSessionId();
       const { error } = await supabase
         .from('anonymous_generations')
         .update({
           status,
           ...(errorMessage && { error_message: errorMessage }),
         })
-        .eq('task_id', taskId);
+        .eq('task_id', taskId)
+        .eq('session_id', sessionId); // Only update generations from this session
 
       if (error) {
         console.error('Failed to update anonymous generation status:', error);
@@ -122,11 +128,14 @@ export class GenerationService {
 
     // If not authenticated, save to anonymous_tracks
     if (!isAuth) {
+      const sessionId = getAnonymousSessionId();
+      
       // Update anonymous_generation status to completed
       const { error: updateError } = await supabase
         .from('anonymous_generations')
         .update({ status: 'completed' })
-        .eq('task_id', taskId);
+        .eq('task_id', taskId)
+        .eq('session_id', sessionId); // Only update generations from this session
 
       if (updateError) {
         console.error('Failed to update anonymous generation status:', updateError);
@@ -145,6 +154,7 @@ export class GenerationService {
         stream_audio_url: track.stream_audio_url,
         image_url: track.image_url,
         duration: track.duration,
+        session_id: sessionId, // Include session_id for filtering
       }));
 
       const { data: savedTracks, error: tracksError } = await supabase
@@ -262,6 +272,7 @@ export class GenerationService {
   /**
    * Get anonymous generations (for non-authenticated users)
    * Returns generations with their tracks grouped by task_id
+   * Only returns generations from the current session
    */
   static async getAnonymousGenerations(limit = 50): Promise<Array<{
     task_id: string;
@@ -272,10 +283,13 @@ export class GenerationService {
     tracks: SunoMusicTrack[];
   }>> {
     try {
-      // Get all anonymous generations
+      const sessionId = getAnonymousSessionId();
+      
+      // Get anonymous generations for this session only
       const { data: generations, error: genError } = await supabase
         .from('anonymous_generations')
         .select('*')
+        .eq('session_id', sessionId) // Filter by session_id
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -288,12 +302,13 @@ export class GenerationService {
         return [];
       }
 
-      // Get all tracks for these generations
+      // Get all tracks for these generations (also filtered by session_id)
       const taskIds = generations.map(g => g.task_id);
       const { data: tracks, error: tracksError } = await supabase
         .from('anonymous_tracks')
         .select('*')
         .in('task_id', taskIds)
+        .eq('session_id', sessionId) // Filter by session_id
         .order('created_at', { ascending: true });
 
       if (tracksError) {
@@ -349,13 +364,16 @@ export class GenerationService {
 
   /**
    * Get anonymous tracks for a specific task ID
+   * Only returns tracks from the current session
    */
   static async getAnonymousTracks(taskId: string): Promise<SunoMusicTrack[]> {
     try {
+      const sessionId = getAnonymousSessionId();
       const { data: tracks, error } = await supabase
         .from('anonymous_tracks')
         .select('*')
         .eq('task_id', taskId)
+        .eq('session_id', sessionId) // Filter by session_id
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -383,6 +401,52 @@ export class GenerationService {
       console.error('Error in getAnonymousTracks:', error);
       return [];
     }
+  }
+
+  /**
+   * Get count of completed anonymous generations for the current device
+   * This persists across browser sessions, page refreshes, and even after days/weeks
+   * The session_id is stored in localStorage, so it's tied to the device, not the session
+   * This is used to track free generation credits per device (max 2)
+   * 
+   * Example: If a user generates 1 song, then comes back 5 days later on the same device,
+   * they will still have 1 credit remaining (2 - 1 = 1)
+   */
+  static async getAnonymousCompletedCount(): Promise<number> {
+    try {
+      const sessionId = getAnonymousSessionId(); // This is actually a device ID that persists
+      const { count, error } = await supabase
+        .from('anonymous_generations')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', sessionId) // Filter by device ID
+        .eq('status', 'completed');
+
+      if (error) {
+        console.error('Error counting anonymous generations:', error);
+        return 0;
+      }
+
+      return count || 0;
+    } catch (error) {
+      console.error('Error in getAnonymousCompletedCount:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Check if anonymous user has reached the free generation limit (2)
+   */
+  static async hasReachedAnonymousFreeLimit(): Promise<boolean> {
+    const count = await this.getAnonymousCompletedCount();
+    return count >= 2;
+  }
+
+  /**
+   * Get remaining free generations for anonymous users (max 2)
+   */
+  static async getRemainingAnonymousFreeGenerations(): Promise<number> {
+    const count = await this.getAnonymousCompletedCount();
+    return Math.max(0, 2 - count);
   }
 }
 

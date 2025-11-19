@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Play, Pause, Download, Music2, Library, LogIn } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
+import { AppHeader } from './AppHeader';
 import { GenerationService } from '@/lib/generationService';
 import { supabase } from '@/lib/supabase';
 import { getPlaybackUrl, getDownloadUrl, isTrackPlayable } from '@/lib/audioUtils';
@@ -11,6 +12,8 @@ import type { SunoMusicTrack } from '@/types/suno';
 interface LibraryScreenProps {
   onBack: () => void;
   onAuthClick?: () => void;
+  onProfileClick?: () => void;
+  username?: string | null;
 }
 
 interface LibraryGeneration {
@@ -23,7 +26,7 @@ interface LibraryGeneration {
   tracks: SunoMusicTrack[];
 }
 
-export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
+export function LibraryScreen({ onBack, onAuthClick, onProfileClick, username }: LibraryScreenProps) {
   console.log('🔵 LibraryScreen: Component rendering');
   
   const [generations, setGenerations] = useState<LibraryGeneration[]>([]);
@@ -51,33 +54,36 @@ export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
     }
     console.log('🔵 LibraryScreen: Starting load, setting isLoadingRef to true');
     isLoadingRef.current = true;
-    setLoading(true);
+    setIsLoading(true);
     
     // Safety timeout - always set loading to false after 5 seconds
     const timeoutId = setTimeout(() => {
       console.warn('LibraryScreen: Load timeout, forcing loading to false');
       // Try to get auth state one more time before giving up
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        setIsAuthenticated(!!user);
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setIsAuthenticated(!!session?.user);
       }).catch((err) => {
         console.error('LibraryScreen: Error checking auth in timeout:', err);
         // Default to not authenticated if we can't check
         setIsAuthenticated(false);
       });
-      setLoading(false);
+      setIsLoading(false);
       isLoadingRef.current = false;
     }, 5000);
     
     try {
       console.log('LibraryScreen: Starting to load generations...');
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      // Use getSession() instead of getUser() to get the real current session state
+      // getUser() can return cached data even after logout
+      const { data: { session }, error: authError } = await supabase.auth.getSession();
       
       if (authError) {
         console.error('LibraryScreen: Auth error:', authError);
       }
       
+      const user = session?.user || null;
       setIsAuthenticated(!!user);
-      console.log('LibraryScreen: User authenticated:', !!user);
+      console.log('LibraryScreen: User authenticated:', !!user, 'User ID:', user?.id);
       
       let loadedGenerations: LibraryGeneration[] = [];
       
@@ -149,7 +155,7 @@ export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
     } finally {
       clearTimeout(timeoutId);
       console.log('LibraryScreen: Setting loading to false');
-      setLoading(false);
+      setIsLoading(false);
       isLoadingRef.current = false;
     }
   };
@@ -169,10 +175,10 @@ export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
         setIsLoading(false);
         isLoadingRef.current = false;
         // Ensure we check auth state
-        supabase.auth.getUser().then(({ data: { user } }) => {
-          console.log('🔵 LibraryScreen: Fallback auth check - user:', !!user);
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          console.log('🔵 LibraryScreen: Fallback auth check - user:', !!session?.user);
           if (isMounted) {
-            setIsAuthenticated(!!user);
+            setIsAuthenticated(!!session?.user);
           }
         }).catch((err) => {
           console.error('🔵 LibraryScreen: Fallback auth error:', err);
@@ -218,8 +224,9 @@ export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
         storageTimeout = setTimeout(async () => {
           if (isMounted) {
             // Check auth state and reload
-            const { data: { user } } = await supabase.auth.getUser();
+            const { data: { session } } = await supabase.auth.getSession();
             if (isMounted) {
+              const user = session?.user || null;
               setIsAuthenticated(!!user);
               const currentUserId = user?.id || null;
               if (currentUserId !== lastUserIdRef.current) {
@@ -445,7 +452,12 @@ export function LibraryScreen({ onBack, onAuthClick }: LibraryScreenProps) {
             <Library className="w-6 h-6 text-white" />
             <h1 className="text-2xl text-white font-bold">Ma Bibliothèque</h1>
           </div>
-          <div className="w-10" /> {/* Spacer for centering */}
+          {onProfileClick && (
+            <AppHeader
+              onProfileClick={onProfileClick}
+              username={username || null}
+            />
+          )}
         </div>
 
         {(() => {

@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { FloatingCard } from "./FloatingCard";
 import { Music, Sparkles, Calendar } from "lucide-react";
+import { AppHeader } from "./AppHeader";
 
 interface HomeScreenProps {
   onGenerateClick: () => void;
@@ -63,15 +64,10 @@ export function HomeScreen({
               minute: "2-digit",
             })}
           </motion.div>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={onProfileClick}
-            className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center"
-          >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center text-white/60 font-bold text-sm">
-              {username ? username.charAt(0).toUpperCase() : ''}
-            </div>
-          </motion.button>
+          <AppHeader
+            onProfileClick={onProfileClick}
+            username={username}
+          />
         </div>
 
         {/* Main headline */}

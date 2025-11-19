@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { ArrowLeft, Music, LogOut, User, Play, ChevronDown, ChevronUp, Pause, X, Download, Share2 } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
+import { AppHeader } from './AppHeader';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { GenerationService } from '@/lib/generationService';
@@ -10,6 +11,7 @@ import type { SunoMusicTrack } from '@/types/suno';
 interface ProfileScreenProps {
   onBack: () => void;
   onAuthClick?: () => void;
+  username?: string | null;
 }
 
 interface UserProfile {
@@ -28,11 +30,12 @@ interface Generation {
   tracks?: SunoMusicTrack[];
 }
 
-export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
+export function ProfileScreen({ onBack, onAuthClick, username }: ProfileScreenProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGenId, setExpandedGenId] = useState<string | null>(null);
+  const [showAllGenerations, setShowAllGenerations] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<SunoMusicTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -41,7 +44,8 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
 
   const loadUserProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user || null;
       if (user) {
         setUserProfile({
           username: user.user_metadata?.username || user.email?.split('@')[0] || 'User',
@@ -58,25 +62,57 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
 
   const loadGenerations = async () => {
     try {
-      const userGenerations = await GenerationService.getUserGenerations(10);
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user || null;
       
-      // Get tracks for each generation
-      const generationsWithTracks = await Promise.all(
-        userGenerations.map(async (gen) => {
-          const tracks = await GenerationService.getGenerationTracks(gen.id);
-          return {
-            id: gen.id,
-            prompt: gen.prompt,
-            model: gen.model,
-            status: gen.status,
-            created_at: gen.created_at,
-            trackCount: tracks.length,
-            tracks: tracks,
-          };
-        })
-      );
+      let loadedGenerations: Generation[] = [];
       
-      setGenerations(generationsWithTracks);
+      if (user) {
+        // Authenticated: load from generations table
+        const userGenerations = await GenerationService.getUserGenerations(50);
+        
+        // Get tracks for each generation
+        loadedGenerations = await Promise.all(
+          userGenerations.map(async (gen) => {
+            const tracks = await GenerationService.getGenerationTracks(gen.id);
+            return {
+              id: gen.id,
+              prompt: gen.prompt,
+              model: gen.model,
+              status: gen.status,
+              created_at: gen.created_at,
+              trackCount: tracks.length,
+              tracks: tracks.map(track => ({
+                id: track.suno_id,
+                title: track.title,
+                tags: track.tags,
+                prompt: track.prompt,
+                model_name: track.model_name,
+                audio_url: track.audio_url,
+                source_audio_url: track.source_audio_url,
+                stream_audio_url: track.stream_audio_url,
+                image_url: track.image_url,
+                duration: track.duration,
+              })),
+            };
+          })
+        );
+      } else {
+        // Anonymous: load from anonymous_generations table
+        const anonymousGens = await GenerationService.getAnonymousGenerations(50);
+        
+        loadedGenerations = anonymousGens.map(gen => ({
+          id: gen.task_id,
+          prompt: gen.prompt,
+          model: gen.model,
+          status: gen.status,
+          created_at: gen.created_at,
+          trackCount: gen.tracks.length,
+          tracks: gen.tracks,
+        }));
+      }
+      
+      setGenerations(loadedGenerations);
     } catch (error) {
       console.error('Error loading generations:', error);
     }
@@ -84,6 +120,7 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
 
   const lastUserIdRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -94,20 +131,27 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
       isLoadingRef.current = true;
       setLoading(true); // Set loading state
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user || null;
         if (!isMounted) return;
         
-        // Only reload if user changed
-        if (user?.id !== lastUserIdRef.current) {
-          lastUserIdRef.current = user?.id || null;
+        const currentUserId = user?.id || null;
+        const userChanged = currentUserId !== lastUserIdRef.current;
+        const isFirstLoad = !hasLoadedOnceRef.current;
+        
+        // Load if user changed OR if it's the first load
+        if (userChanged || isFirstLoad) {
+          lastUserIdRef.current = currentUserId;
+          hasLoadedOnceRef.current = true;
+          
           if (user) {
             await loadUserProfile();
-            await loadGenerations();
           } else {
             setUserProfile(null);
-            setGenerations([]);
-            setLoading(false); // Make sure to set loading to false when not authenticated
           }
+          // Always load generations (for both authenticated and anonymous)
+          await loadGenerations();
+          setLoading(false);
         } else {
           // User hasn't changed, but we still need to ensure loading is false
           setLoading(false);
@@ -115,6 +159,7 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
       } catch (error) {
         console.error('Error loading data:', error);
         setLoading(false); // Set loading to false on error
+        hasLoadedOnceRef.current = true; // Mark as loaded even on error to prevent infinite loading
       } finally {
         isLoadingRef.current = false;
       }
@@ -470,7 +515,7 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
       {/* Content */}
       <div className="relative z-10 p-6 pt-16 pb-24">
         {/* Header */}
-        <div className="flex items-center mb-8">
+        <div className="flex items-center justify-between mb-8">
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={onBack}
@@ -478,6 +523,8 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
           >
             <ArrowLeft className="w-5 h-5 text-white" />
           </motion.button>
+          {/* Already on profile page, no header needed */}
+          <div className="w-10" />
         </div>
 
         {/* Profile header */}
@@ -530,10 +577,12 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
               <p className="text-2xl text-white">{generations.length}</p>
               <p className="text-white/60 text-sm">Generations</p>
             </div>
-            <div>
-              <p className="text-2xl text-white">∞</p>
-              <p className="text-white/60 text-sm">Unlimited</p>
-            </div>
+            {userProfile && (
+              <div>
+                <p className="text-2xl text-white">∞</p>
+                <p className="text-white/60 text-sm">Unlimited</p>
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -555,148 +604,294 @@ export function ProfileScreen({ onBack, onAuthClick }: ProfileScreenProps) {
           transition={{ delay: 0.3 }}
           className="space-y-4 mb-6"
         >
-          {!userProfile && !loading ? (
+          {loading ? (
             <FloatingCard delay={0.4} rotation={0}>
               <div className="text-center py-8">
-                <User className="w-12 h-12 text-white/30 mx-auto mb-3" />
-                <p className="text-white/70 mb-4">Connectez-vous pour sauvegarder vos tracks</p>
-                {onAuthClick && (
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={onAuthClick}
-                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#FF69B4] to-[#00BFFF] text-white font-medium"
-                  >
-                    Se connecter
-                  </motion.button>
-                )}
+                <div className="w-12 h-12 border-4 border-white/20 border-t-white/60 rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-white/70">Chargement...</p>
               </div>
             </FloatingCard>
           ) : generations.length === 0 ? (
             <FloatingCard delay={0.4} rotation={0}>
               <div className="text-center py-8">
                 <Music className="w-12 h-12 text-white/30 mx-auto mb-3" />
-                <p className="text-white/70">No generations yet</p>
-                <p className="text-white/50 text-sm">Start creating your first track!</p>
+                <p className="text-white/70">No sound generated yet</p>
+                <p className="text-white/50 text-sm">Generate yours now</p>
+                {!userProfile && (
+                  <p className="text-white/40 text-xs mt-2">Connectez-vous pour sauvegarder vos tracks</p>
+                )}
               </div>
             </FloatingCard>
           ) : (
-            generations.map((gen, i) => (
-              <motion.div
-                key={gen.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4 + i * 0.05 }}
-              >
-                <FloatingCard delay={0} rotation={i % 2 === 0 ? 1 : -1}>
-                  <button
-                    onClick={() => toggleExpand(gen.id)}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
-                          gen.status === 'processing' ? 'animate-pulse' : ''
-                        }`}>
-                          <Music className="w-6 h-6 text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-white/90 line-clamp-1">{gen.prompt}</p>
-                          <div className="flex items-center gap-2 text-white/60 text-sm">
-                            <span>{gen.model}</span>
-                            {gen.trackCount && gen.trackCount > 0 && (
-                              <>
-                                <span>•</span>
-                                <span>{gen.trackCount} track{gen.trackCount > 1 ? 's' : ''}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p className={`text-sm ${
-                            gen.status === 'completed' ? 'text-green-400' : 
-                            gen.status === 'processing' ? 'text-yellow-400' : 
-                            gen.status === 'failed' ? 'text-red-400' : 
-                            'text-white/60'
-                          }`}>
-                            {gen.status}
-                          </p>
-                          <p className="text-white/60 text-xs">{formatDate(gen.created_at)}</p>
-                        </div>
-                        {gen.trackCount && gen.trackCount > 0 && (
-                          <div className="text-white/60">
-                            {expandedGenId === gen.id ? (
-                              <ChevronUp className="w-5 h-5" />
-                            ) : (
-                              <ChevronDown className="w-5 h-5" />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Expanded tracks */}
-                  {expandedGenId === gen.id && gen.tracks && gen.tracks.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="mt-4 pt-4 border-t border-white/10 space-y-2"
+            <>
+              {/* Show first 3 generations */}
+              {generations.slice(0, 3).map((gen, i) => (
+                <motion.div
+                  key={gen.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + i * 0.05 }}
+                >
+                  <FloatingCard delay={0} rotation={i % 2 === 0 ? 1 : -1}>
+                    <button
+                      onClick={() => toggleExpand(gen.id)}
+                      className="w-full text-left"
                     >
-                      {gen.tracks.map((track, trackIndex) => (
-                        <button
-                          key={track.id}
-                          onClick={() => handlePlayTrack(track)}
-                          className={`w-full flex items-center gap-3 p-3 rounded-xl transition ${
-                            currentTrack?.id === track.id
-                              ? 'bg-gradient-to-br from-[#FF69B4]/20 to-[#00BFFF]/20 border border-white/20'
-                              : 'bg-white/5 hover:bg-white/10'
-                          }`}
-                        >
-                          <div className={`w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
-                            currentTrack?.id === track.id && isPlaying ? 'animate-pulse' : ''
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
+                            gen.status === 'processing' ? 'animate-pulse' : ''
                           }`}>
-                            {currentTrack?.id === track.id && isPlaying ? (
-                              <Pause className="w-5 h-5 text-white" fill="white" />
-                            ) : (
-                              <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                            <Music className="w-6 h-6 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-white/90 line-clamp-1">{gen.prompt}</p>
+                            <div className="flex items-center gap-2 text-white/60 text-sm">
+                              <span>{gen.model}</span>
+                              {gen.trackCount && gen.trackCount > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span>{gen.trackCount} track{gen.trackCount > 1 ? 's' : ''}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className={`text-sm ${
+                              gen.status === 'completed' ? 'text-green-400' : 
+                              gen.status === 'processing' ? 'text-yellow-400' : 
+                              gen.status === 'failed' ? 'text-red-400' : 
+                              'text-white/60'
+                            }`}>
+                              {gen.status}
+                            </p>
+                            <p className="text-white/60 text-xs">{formatDate(gen.created_at)}</p>
+                          </div>
+                          {gen.trackCount && gen.trackCount > 0 && (
+                            <div className="text-white/60">
+                              {expandedGenId === gen.id ? (
+                                <ChevronUp className="w-5 h-5" />
+                              ) : (
+                                <ChevronDown className="w-5 h-5" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Expanded tracks */}
+                    {expandedGenId === gen.id && gen.tracks && gen.tracks.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-4 pt-4 border-t border-white/10 space-y-2"
+                      >
+                        {gen.tracks.map((track, trackIndex) => (
+                          <button
+                            key={track.id}
+                            onClick={() => handlePlayTrack(track)}
+                            className={`w-full flex items-center gap-3 p-3 rounded-xl transition ${
+                              currentTrack?.id === track.id
+                                ? 'bg-gradient-to-br from-[#FF69B4]/20 to-[#00BFFF]/20 border border-white/20'
+                                : 'bg-white/5 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className={`w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
+                              currentTrack?.id === track.id && isPlaying ? 'animate-pulse' : ''
+                            }`}>
+                              {currentTrack?.id === track.id && isPlaying ? (
+                                <Pause className="w-5 h-5 text-white" fill="white" />
+                              ) : (
+                                <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                              )}
+                            </div>
+                            <div className="flex-1 text-left">
+                              <p className="text-white/90 text-sm line-clamp-1">{track.title}</p>
+                              <p className="text-white/60 text-xs">{formatDuration(track.duration)}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </FloatingCard>
+                </motion.div>
+              ))}
+              
+              {/* Show more button if there are more than 3 generations */}
+              {generations.length > 3 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.55 }}
+                >
+                  {!showAllGenerations ? (
+                    <FloatingCard delay={0} rotation={0} className="!p-2">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setShowAllGenerations(true)}
+                        className="w-full py-1.5 text-center"
+                      >
+                        <div className="flex items-center justify-center gap-2 text-white/80">
+                          <ChevronDown className="w-5 h-5" />
+                          <span className="font-medium">Voir {generations.length - 3} autre{generations.length - 3 > 1 ? 's' : ''} son{generations.length - 3 > 1 ? 's' : ''}</span>
+                        </div>
+                      </motion.button>
+                    </FloatingCard>
+                  ) : (
+                    <>
+                      {/* Show remaining generations */}
+                      {generations.slice(3).map((gen, i) => (
+                        <motion.div
+                          key={gen.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.55 + i * 0.05 }}
+                        >
+                          <FloatingCard delay={0} rotation={(i + 3) % 2 === 0 ? 1 : -1}>
+                            <button
+                              onClick={() => toggleExpand(gen.id)}
+                              className="w-full text-left"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4 flex-1">
+                                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
+                                    gen.status === 'processing' ? 'animate-pulse' : ''
+                                  }`}>
+                                    <Music className="w-6 h-6 text-white" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-white/90 line-clamp-1">{gen.prompt}</p>
+                                    <div className="flex items-center gap-2 text-white/60 text-sm">
+                                      <span>{gen.model}</span>
+                                      {gen.trackCount && gen.trackCount > 0 && (
+                                        <>
+                                          <span>•</span>
+                                          <span>{gen.trackCount} track{gen.trackCount > 1 ? 's' : ''}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="text-right">
+                                    <p className={`text-sm ${
+                                      gen.status === 'completed' ? 'text-green-400' : 
+                                      gen.status === 'processing' ? 'text-yellow-400' : 
+                                      gen.status === 'failed' ? 'text-red-400' : 
+                                      'text-white/60'
+                                    }`}>
+                                      {gen.status}
+                                    </p>
+                                    <p className="text-white/60 text-xs">{formatDate(gen.created_at)}</p>
+                                  </div>
+                                  {gen.trackCount && gen.trackCount > 0 && (
+                                    <div className="text-white/60">
+                                      {expandedGenId === gen.id ? (
+                                        <ChevronUp className="w-5 h-5" />
+                                      ) : (
+                                        <ChevronDown className="w-5 h-5" />
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+
+                            {/* Expanded tracks */}
+                            {expandedGenId === gen.id && gen.tracks && gen.tracks.length > 0 && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mt-4 pt-4 border-t border-white/10 space-y-2"
+                              >
+                                {gen.tracks.map((track, trackIndex) => (
+                                  <button
+                                    key={track.id}
+                                    onClick={() => handlePlayTrack(track)}
+                                    className={`w-full flex items-center gap-3 p-3 rounded-xl transition ${
+                                      currentTrack?.id === track.id
+                                        ? 'bg-gradient-to-br from-[#FF69B4]/20 to-[#00BFFF]/20 border border-white/20'
+                                        : 'bg-white/5 hover:bg-white/10'
+                                    }`}
+                                  >
+                                    <div className={`w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center ${
+                                      currentTrack?.id === track.id && isPlaying ? 'animate-pulse' : ''
+                                    }`}>
+                                      {currentTrack?.id === track.id && isPlaying ? (
+                                        <Pause className="w-5 h-5 text-white" fill="white" />
+                                      ) : (
+                                        <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                                      )}
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                      <p className="text-white/90 text-sm line-clamp-1">{track.title}</p>
+                                      <p className="text-white/60 text-xs">{formatDuration(track.duration)}</p>
+                                    </div>
+                                  </button>
+                                ))}
+                              </motion.div>
                             )}
-                          </div>
-                          <div className="flex-1 text-left">
-                            <p className="text-white/90 text-sm line-clamp-1">{track.title}</p>
-                            <p className="text-white/60 text-xs">{formatDuration(track.duration)}</p>
-                          </div>
-                        </button>
+                          </FloatingCard>
+                        </motion.div>
                       ))}
-                    </motion.div>
+                      
+                      {/* Collapse button */}
+                      <FloatingCard delay={0} rotation={0} className="!p-2">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setShowAllGenerations(false)}
+                          className="w-full py-1.5 text-center"
+                        >
+                          <div className="flex items-center justify-center gap-2 text-white/80">
+                            <ChevronUp className="w-5 h-5" />
+                            <span className="font-medium">Voir moins</span>
+                          </div>
+                        </motion.button>
+                      </FloatingCard>
+                    </>
                   )}
-                </FloatingCard>
-              </motion.div>
-            ))
+                </motion.div>
+              )}
+            </>
           )}
         </motion.div>
 
-        {/* Logout Button - Only show when authenticated */}
-        {userProfile && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-            className={currentTrack ? 'mb-32' : ''}
-          >
+        {/* Login/Logout Button - Always show at bottom */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.8 }}
+          className={currentTrack ? 'mb-32' : 'mt-6'}
+        >
+          {userProfile ? (
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={handleLogout}
-              className="w-full py-4 rounded-2xl bg-white/10 backdrop-blur-xl text-white flex items-center justify-center gap-2 border border-white/20"
+              className="w-full py-4 rounded-2xl bg-white/10 backdrop-blur-xl text-white flex items-center justify-center gap-2 border border-white/20 hover:bg-white/20 transition-all"
             >
               <LogOut className="w-5 h-5" />
-              Logout
+              Se déconnecter
             </motion.button>
-          </motion.div>
-        )}
+          ) : (
+            onAuthClick && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={onAuthClick}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#FF69B4] to-[#00BFFF] text-white flex items-center justify-center gap-2 font-medium hover:opacity-90 transition-all"
+              >
+                <User className="w-5 h-5" />
+                Se connecter
+              </motion.button>
+            )
+          )}
+        </motion.div>
       </div>
 
       {/* Hidden audio element */}

@@ -205,12 +205,9 @@ export default function App() {
   };
 
   const handleProfileClick = () => {
-    if (isAuthenticated) {
-      setCurrentScreen('profile');
-    } else {
-      setCurrentScreen('auth');
-    }
+    setCurrentScreen('profile');
   };
+
 
   return (
     <>
@@ -228,8 +225,9 @@ export default function App() {
         <GeneratorScreen
           onBack={() => setCurrentScreen('home')}
           onGenerate={handleGenerate}
-          onLibraryClick={handleProfileClick}
+          onProfileClick={handleProfileClick}
           onAuthClick={() => setCurrentScreen('auth')}
+          username={username}
         />
       )}
 
@@ -253,7 +251,6 @@ export default function App() {
             setCurrentScreen('generator');
           }}
           onProfileClick={handleProfileClick}
-          onLibraryClick={handleProfileClick}
           onAuthClick={() => setCurrentScreen('auth')}
           tracks={generation.tracks}
           username={username}
@@ -266,6 +263,7 @@ export default function App() {
         <ProfileScreen 
           onBack={() => setCurrentScreen('home')} 
           onAuthClick={() => setCurrentScreen('auth')}
+          username={username}
         />
       )}
 
@@ -275,6 +273,8 @@ export default function App() {
           <LibraryScreen 
             onBack={() => setCurrentScreen('home')} 
             onAuthClick={() => setCurrentScreen('auth')}
+            onProfileClick={handleProfileClick}
+            username={username}
           />
         </>
       )}

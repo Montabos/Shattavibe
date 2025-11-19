@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Play, Pause, Download, Share2, RotateCcw, Music2, Library, MoreVertical, Zap, Loader2 } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
 import { WaveformVisualizer } from './WaveformVisualizer';
+import { AppHeader } from './AppHeader';
 import { SessionStorageService } from '@/lib/sessionStorageService';
 import { LocalStorageService } from '@/lib/localStorageService';
 import { GenerationService } from '@/lib/generationService';
@@ -15,7 +16,6 @@ interface ResultScreenProps {
   onBack: () => void;
   onRegenerate: () => void;
   onProfileClick: () => void;
-  onLibraryClick?: () => void;
   onAuthClick?: () => void;
   tracks: SunoMusicTrack[] | null;
   username: string | null;
@@ -23,7 +23,7 @@ interface ResultScreenProps {
   isLoading?: boolean; // True if tracks are still being generated
 }
 
-export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryClick, onAuthClick, tracks, username, generationPrompt, isLoading = false }: ResultScreenProps) {
+export function ResultScreen({ onBack, onRegenerate, onProfileClick, onAuthClick, tracks, username, generationPrompt, isLoading = false }: ResultScreenProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -318,34 +318,11 @@ export function ResultScreen({ onBack, onRegenerate, onProfileClick, onLibraryCl
             <ArrowLeft className="w-5 h-5 text-white" />
           </motion.button>
           
-          <div className="flex gap-3">
-            {/* Library button */}
-            {onLibraryClick && (
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={onLibraryClick}
-                className="relative w-10 h-10 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center"
-              >
-                <Library className="w-5 h-5 text-white" />
-                {sessionCount > 0 && (
-                  <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] text-white text-xs flex items-center justify-center">
-                    {sessionCount}
-                  </div>
-                )}
-              </motion.button>
-            )}
-            
-            {/* Profile button */}
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={onProfileClick}
-              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center"
-            >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] flex items-center justify-center text-white/60 font-bold text-sm">
-                {username ? username.charAt(0).toUpperCase() : ''}
-              </div>
-            </motion.button>
-          </div>
+          {/* App Header with Profile */}
+          <AppHeader
+            onProfileClick={onProfileClick}
+            username={username}
+          />
         </div>
 
         {/* Track Title */}

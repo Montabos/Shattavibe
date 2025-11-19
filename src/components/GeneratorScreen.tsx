@@ -2,8 +2,7 @@ import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Zap, Sparkles, Gift, Library } from 'lucide-react';
 import { FloatingCard } from './FloatingCard';
-import { LocalStorageService } from '@/lib/localStorageService';
-import { SessionStorageService } from '@/lib/sessionStorageService';
+import { AppHeader } from './AppHeader';
 import { GenerationService } from '@/lib/generationService';
 import { supabase } from '@/lib/supabase';
 
@@ -13,11 +12,12 @@ interface GeneratorScreenProps {
     prompt: string;
     instrumental: boolean;
   }) => void;
-  onLibraryClick?: () => void;
+  onProfileClick?: () => void;
   onAuthClick?: () => void;
+  username?: string | null;
 }
 
-export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClick }: GeneratorScreenProps) {
+export function GeneratorScreen({ onBack, onGenerate, onProfileClick, onAuthClick, username }: GeneratorScreenProps) {
   const [prompt, setPrompt] = useState('');
   const [musicStyle, setMusicStyle] = useState<string>('');
   
@@ -54,9 +54,24 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
     };
   }, []);
   
-  const remainingFree = LocalStorageService.getRemainingFreeGenerations();
-  const hasReachedLimit = !isAuthenticated && LocalStorageService.hasReachedFreeLimit();
-  const sessionCount = SessionStorageService.getSessionCount();
+  const [remainingFree, setRemainingFree] = useState<number>(2);
+  const [hasReachedLimit, setHasReachedLimit] = useState(false);
+
+  // Load remaining free generations
+  useEffect(() => {
+    const loadRemaining = async () => {
+      if (!isAuthenticated) {
+        const remaining = await GenerationService.getRemainingAnonymousFreeGenerations();
+        const hasReached = await GenerationService.hasReachedAnonymousFreeLimit();
+        setRemainingFree(remaining);
+        setHasReachedLimit(hasReached);
+      } else {
+        setRemainingFree(Infinity);
+        setHasReachedLimit(false);
+      }
+    };
+    loadRemaining();
+  }, [isAuthenticated]);
 
   const stylePresets = [
     "Gospel afro-house drill and bass",
@@ -137,20 +152,12 @@ export function GeneratorScreen({ onBack, onGenerate, onLibraryClick, onAuthClic
               </motion.div>
             )}
 
-            {/* Library button */}
-            {onLibraryClick && (
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={onLibraryClick}
-                className="relative w-10 h-10 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center"
-              >
-                <Library className="w-5 h-5 text-white" />
-                {sessionCount > 0 && (
-                  <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-gradient-to-br from-[#FF69B4] to-[#00BFFF] text-white text-xs flex items-center justify-center">
-                    {sessionCount}
-                  </div>
-                )}
-              </motion.button>
+            {/* App Header with Profile */}
+            {onProfileClick && (
+              <AppHeader
+                onProfileClick={onProfileClick}
+                username={username || null}
+              />
             )}
           </div>
         </div>
