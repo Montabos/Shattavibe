@@ -80,7 +80,7 @@ export function useSunoGeneration() {
         }
       }
 
-      const remaining = isAuthenticated 
+      let remaining = isAuthenticated 
         ? Infinity 
         : await GenerationService.getRemainingAnonymousFreeGenerations();
 
@@ -126,8 +126,8 @@ export function useSunoGeneration() {
       await updateRemainingFree();
 
       // Start polling for tracks (status will be updated to 'polling' in useEffect)
-      const { data: { user } } = await supabase.auth.getUser();
-      const remaining = user 
+      // Recalculate remaining after updateRemainingFree (user state might have changed)
+      remaining = isAuthenticated 
         ? Infinity 
         : await GenerationService.getRemainingAnonymousFreeGenerations();
       
